@@ -1,0 +1,10 @@
+cn\chuanwise\xiaoming\lexicons\pro\data\LexiconEntry.class
+cn\chuanwise\xiaoming\lexicons\pro\interactor\LexiconInteractor.class
+cn\chuanwise\xiaoming\lexicons\pro\data\LexiconMatcher$1.class
+cn\chuanwise\xiaoming\lexicons\pro\data\LexiconEntry$1.class
+cn\chuanwise\xiaoming\lexicons\pro\data\LexiconMatcher.class
+cn\chuanwise\xiaoming\lexicons\pro\LexiconsProAPI.class
+cn\chuanwise\xiaoming\lexicons\pro\configuration\LexiconConfiguration.class
+cn\chuanwise\xiaoming\lexicons\pro\data\LexiconMatchType.class
+cn\chuanwise\xiaoming\lexicons\pro\LexiconsProPlugin.class
+cn\chuanwise\xiaoming\lexicons\pro\data\LexiconManager.class

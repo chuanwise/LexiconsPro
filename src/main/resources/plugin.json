@@ -1,0 +1,7 @@
+{
+  "main": "cn.chuanwise.xiaoming.lexicons.pro.LexiconsProPlugin",
+  "name": "lexicons-pro",
+  "alias": "词库插件-升级版",
+  "author": "chuanwise",
+  "version": "1.0"
+}
