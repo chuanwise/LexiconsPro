@@ -12,8 +12,8 @@ public enum LexiconMatchType {
     START_MATCH,
     END_EQUAL,
     END_MATCH,
-    EQUALS,
-    EQUALS_IGNORE_CASE,
+    EQUAL,
+    EQUAL_IGNORE_CASE,
     MATCH,
     PARAMETER,
     CONTAIN_EQUAL,
@@ -24,11 +24,11 @@ public enum LexiconMatchType {
         CHINESE_CONVERTOR.put(START_MATCH, "开头匹配");
         CHINESE_CONVERTOR.put(END_MATCH, "结尾匹配");
         CHINESE_CONVERTOR.put(MATCH, "匹配");
-        CHINESE_CONVERTOR.put(EQUALS_IGNORE_CASE, "忽略字母大小写匹配");
+        CHINESE_CONVERTOR.put(EQUAL_IGNORE_CASE, "忽略字母大小写匹配");
         CHINESE_CONVERTOR.put(CONTAIN_EQUAL, "包含");
         CHINESE_CONVERTOR.put(END_EQUAL, "结尾相等");
         CHINESE_CONVERTOR.put(PARAMETER, "参数提取");
-        CHINESE_CONVERTOR.put(EQUALS, "相等");
+        CHINESE_CONVERTOR.put(EQUAL, "相等");
         CHINESE_CONVERTOR.put(START_EQUAL, "开头相等");
         CHINESE_CONVERTOR.put(CONTAIN_MATCH, "包含匹配");
     }
@@ -36,7 +36,7 @@ public enum LexiconMatchType {
     public String toChinese() {
         final String result = CHINESE_CONVERTOR.get(this);
         if (Objects.isNull(result)) {
-            LexiconsProPlugin.INSTANCE.throwUnsupportedOperationVersion("matcherType: " + this + ", " +
+            LexiconsProPlugin.INSTANCE.throwUnsupportedVersionException("matcherType: " + this + ", " +
                     "only types in {" + CollectionUtility.toString(CHINESE_CONVERTOR.keySet(), ", ") + "} are supported.", null);
         }
         return result;
@@ -45,7 +45,7 @@ public enum LexiconMatchType {
     public static LexiconMatchType fromChinese(String chinese) {
         final LexiconMatchType result = CHINESE_CONVERTOR.getKey(chinese);
         if (Objects.isNull(result)) {
-            LexiconsProPlugin.INSTANCE.throwUnsupportedOperationVersion("matcherType: " + chinese + ", " +
+            LexiconsProPlugin.INSTANCE.throwUnsupportedVersionException("matcherType: " + chinese + ", " +
                     "only chinese names in {" + CollectionUtility.toString(CHINESE_CONVERTOR.values(), ", ") + "} are supported.", null);
         }
         return result;

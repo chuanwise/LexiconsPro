@@ -91,12 +91,12 @@ public class LexiconManager extends FilePreservableImpl {
     }
 
     public void addGroupEntry(String tag, LexiconEntry entry) {
-        final Set<LexiconEntry> lexiconEntries = CollectionUtility.getOrSupplie(groupEntries, tag, HashSet::new);
+        final Set<LexiconEntry> lexiconEntries = CollectionUtility.getOrPutSupplie(groupEntries, tag, HashSet::new);
         lexiconEntries.add(entry);
     }
 
     public void addPersonalEntry(long code, LexiconEntry entry) {
-        final Set<LexiconEntry> lexiconEntries = CollectionUtility.getOrSupplie(personalEntries, code, HashSet::new);
+        final Set<LexiconEntry> lexiconEntries = CollectionUtility.getOrPutSupplie(personalEntries, code, HashSet::new);
         lexiconEntries.add(entry);
     }
 

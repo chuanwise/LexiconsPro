@@ -1,9 +1,9 @@
 package cn.chuanwise.xiaoming.lexicons.pro;
 
-import cn.chuanwise.xiaoming.core.plugin.XiaomingPluginImpl;
 import cn.chuanwise.xiaoming.lexicons.pro.configuration.LexiconConfiguration;
 import cn.chuanwise.xiaoming.lexicons.pro.data.LexiconManager;
 import cn.chuanwise.xiaoming.lexicons.pro.interactor.LexiconInteractor;
+import cn.chuanwise.xiaoming.plugin.XiaomingPluginImpl;
 import lombok.Getter;
 
 import java.io.File;

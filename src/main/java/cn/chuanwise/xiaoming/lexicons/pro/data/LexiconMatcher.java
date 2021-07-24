@@ -2,7 +2,7 @@ package cn.chuanwise.xiaoming.lexicons.pro.data;
 
 import cn.chuanwise.utility.CheckUtility;
 import cn.chuanwise.utility.StringUtility;
-import cn.chuanwise.xiaoming.api.interactor.filter.ParameterFilterMatcher;
+import cn.chuanwise.xiaoming.interactor.filter.ParameterFilterMatcher;
 import cn.chuanwise.xiaoming.lexicons.pro.LexiconsProPlugin;
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -16,7 +16,7 @@ import java.util.regex.Pattern;
 @NoArgsConstructor
 @AllArgsConstructor
 public class LexiconMatcher {
-    LexiconMatchType matchType = LexiconMatchType.EQUALS;
+    LexiconMatchType matchType = LexiconMatchType.EQUAL;
     String content;
 
     transient ParameterFilterMatcher parameterFilterMatcher;
@@ -76,9 +76,9 @@ public class LexiconMatcher {
                 return input.startsWith(content);
             case END_EQUAL:
                 return input.endsWith(content);
-            case EQUALS:
+            case EQUAL:
                 return Objects.equals(input, content);
-            case EQUALS_IGNORE_CASE:
+            case EQUAL_IGNORE_CASE:
                 return input.equalsIgnoreCase(content);
 
             case PARAMETER:
@@ -95,7 +95,7 @@ public class LexiconMatcher {
                 return pattern.matcher(input).find();
 
             default:
-                LexiconsProPlugin.INSTANCE.throwUnsupportedOperationVersion("matcherType: " + matchType);
+                LexiconsProPlugin.INSTANCE.throwUnsupportedVersionException("matcherType: " + matchType);
                 return false;
         }
     }

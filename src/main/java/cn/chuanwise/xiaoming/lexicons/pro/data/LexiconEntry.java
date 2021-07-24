@@ -20,10 +20,10 @@ public class LexiconEntry {
 
                 switch (matchType) {
                     case START_EQUAL:
-                    case EQUALS:
+                    case EQUAL:
                     case END_EQUAL:
                     case CONTAIN_EQUAL:
-                    case EQUALS_IGNORE_CASE:
+                    case EQUAL_IGNORE_CASE:
                     case MATCH:
                     case END_MATCH:
                     case START_MATCH:
@@ -31,7 +31,7 @@ public class LexiconEntry {
                     case PARAMETER:
                         return ArgumentUtility.replaceArguments(reply, matcher.getParameterFilterMatcher().getArgumentValues(input), LexiconsProPlugin.INSTANCE.getConfiguration().getMaxIterateTime());
                     default:
-                        LexiconsProPlugin.INSTANCE.throwUnsupportedOperationVersion("matcherType: " + matchType);
+                        LexiconsProPlugin.INSTANCE.throwUnsupportedVersionException("matcherType: " + matchType);
                 }
             }
         }
