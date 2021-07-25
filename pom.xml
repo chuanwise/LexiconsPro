@@ -8,6 +8,14 @@
     <artifactId>lexicons-pro</artifactId>
     <version>1.0</version>
 
+    <repositories>
+        <!--小明内核仓库-->
+        <repository>
+            <id>xiaoming-core</id>
+            <url>https://www.github.com/Chuanwise/xiaoming-bot</url>
+        </repository>
+    </repositories>
+
     <dependencies>
         <dependency>
             <groupId>cn.chuanwise</groupId>

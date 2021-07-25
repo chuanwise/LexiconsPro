@@ -1,5 +1,6 @@
 package cn.chuanwise.xiaoming.lexicons.pro.interactor;
 
+import cn.chuanwise.annotation.Uncomplete;
 import cn.chuanwise.utility.CheckUtility;
 import cn.chuanwise.utility.CollectionUtility;
 import cn.chuanwise.utility.StringUtility;
@@ -19,10 +20,9 @@ import cn.chuanwise.xiaoming.lexicons.pro.data.LexiconMatcher;
 import cn.chuanwise.xiaoming.lexicons.pro.data.LexiconEntry;
 import net.mamoe.mirai.message.data.Image;
 
-import java.util.Arrays;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Set;
+import java.io.IOException;
+import java.util.*;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 
@@ -38,13 +38,17 @@ public class LexiconInteractor extends InteractorImpl {
     static final String IGNORE = "(忽略|ignore)";
     static final String CASE = "(大小写|case)";
     static final String IGNORE_CASE = IGNORE + CASE;
-    static final String MATCHE = "(匹配|matches|match)";
+    static final String MATCH = "(匹配|matches|match)";
     static final String START = "(开头|首|头|start|head)";
     static final String END = "(结尾|尾|end)";
     static final String RULE = "(规则|rule)";
     static final String CONTAIN = "(包含|含有|有|contain|contains)";
     static final String PARAMETER = "(参数|parameter|argument)";
-    static final String REPLY = "(回复)";
+    static final String REPLY = "(回复|reply)";
+    static final String IMAGE = "(图片|image)";
+    static final String MOVE = "(转移|move)";
+    static final String COPY = "(复制|分支|fork|copy)";
+    static final String BATCH = "(批量|bat|batch)";
 
     public LexiconInteractor(LexiconsProPlugin plugin) {
         this.plugin = plugin;
@@ -59,10 +63,19 @@ public class LexiconInteractor extends InteractorImpl {
     @Permission("lexicons.matchType")
     public void onMatchType(XiaomingUser user) {
         user.sendMessage("当前版本的词库插件支持的匹配规则有：\n" +
-                "相等：当触发词和输入相等时回复；类似地，还有「开头相等」和「结尾相等」；\n" +
+                "相等：当触发词和输入相等时回复；类似地，还有「开头相等」、「结尾相等」和「忽略大小写相等」；\n" +
                 "匹配：当输入匹配触发词的正则表达式时回复；类似地，还有「开头匹配」和「结尾匹配」；\n" +
-                "包含：当输入包含触发词时回复；\n" +
+                "包含：当输入包含触发词时回复；共分两种「包含相等」和「包含匹配」；\n" +
                 "参数：当输入符合触发词的参数时，提取其中的参数并替换随机回复。例如，触发词「禁止{what}」，回复「禁止禁止{what}」，则发送「禁止复读」时会回复「禁止禁止复读」");
+    }
+
+    @Uncomplete
+    private void onForkEntry(XiaomingUser user,
+                             String key,
+                             String fromLexiconType,
+                             String toLexiconType,
+                             Runnable fork) {
+        user.sendMessage("你确定要复制" + fromLexiconType + "「" + key + "」到" + toLexiconType + "吗？");
     }
 
     private void addGlobalEntry(XiaomingUser user,
@@ -106,18 +119,28 @@ public class LexiconInteractor extends InteractorImpl {
         entry.addReply(reply);
         getXiaomingBot().getFileSaver().planToSave(manager);
 
-        getXiaomingBot().getScheduler().run(() -> {
-            for (Image image : MiraiCodeUtility.getImages(key)) {
-                getXiaomingBot().getResourceManager().saveImage(image);
-            }
-            for (Image image : MiraiCodeUtility.getImages(reply)) {
-                getXiaomingBot().getResourceManager().saveImage(image);
-            }
-            return true;
-        });
+        asyncSaveImages(MiraiCodeUtility.getImages(key));
+        asyncSaveImages(MiraiCodeUtility.getImages(reply));
 
         user.sendMessage("成功创建新的" + lexiconType + "：" + matcher + " => {remain}");
         onAddNewEntry.accept(entry);
+    }
+
+    private List<Image> asyncSaveImages(Collection<Image> images) {
+        final List<Image> failures = new CopyOnWriteArrayList<>();
+
+        for (Image image : images) {
+            getXiaomingBot().getScheduler().run(() -> {
+                try {
+                    getXiaomingBot().getResourceManager().saveImage(image);
+                } catch (IOException exception) {
+                    exception.printStackTrace();
+                    failures.add(image);
+                }
+            });
+        }
+
+        return failures;
     }
 
     private void addEntryReply(XiaomingUser user,
@@ -141,19 +164,89 @@ public class LexiconInteractor extends InteractorImpl {
         entry.addReply(reply);
         getXiaomingBot().getFileSaver().planToSave(manager);
 
-        getXiaomingBot().getScheduler().run(() -> {
-            for (Image image : MiraiCodeUtility.getImages(key)) {
-                getXiaomingBot().getResourceManager().saveImage(image);
-            }
-            for (Image image : MiraiCodeUtility.getImages(reply)) {
-                getXiaomingBot().getResourceManager().saveImage(image);
-            }
-            return true;
-        });
+        asyncSaveImages(MiraiCodeUtility.getImages(key));
+        asyncSaveImages(MiraiCodeUtility.getImages(reply));
 
         user.sendMessage("成功在现有的" + lexiconType + "「" + key + "」中" +
                 "添加了新的随机回复「" + reply + "」，" +
                 "该词条已有 " + entry.getReplies().size() + " 条随机回复");
+    }
+
+    private void addGlobalEntryReplyOneByOne(XiaomingUser user, String key) {
+        addEntryReplyOneByOne(user, key, "全局词条", () -> manager.forGlobalEntry(key));
+    }
+
+    private void addGroupEntryReplyOneByOne(XiaomingUser user, String groupTag, String key) {
+        addEntryReplyOneByOne(user, key, "群聊词条", () -> manager.forGroupEntry(groupTag, key));
+    }
+
+    private void addPersonalEntryReplyOneByOne(XiaomingUser user, String key) {
+        addEntryReplyOneByOne(user, key, "全局词条", () -> manager.forPersonalEntry(user.getCode(), key));
+    }
+
+    private void addEntryReplyOneByOne(XiaomingUser user,
+                               String key,
+                               String lexiconType,
+                               Supplier<LexiconEntry> onFindEntry) {
+        final LexiconEntry entry = onFindEntry.get();
+        if (Objects.isNull(entry)) {
+            user.sendMessage("没有找到" + lexiconType + "「" + key + "」\n" +
+                    "先使用「添加" + lexiconType +"  <关键词>  <回复>」添加一个吧！");
+            return;
+        }
+
+        final Set<String> replies = entry.getReplies();
+
+        // 一条一条输入词条回复
+        final ArrayList<String> newReplies = InteractorUtility.fillStringCollection(user, "你希望在" + lexiconType + "「" + key + "」中添加哪些回复呢？", "词条回复", new ArrayList<>(), true);
+
+        // 多线程保存图片
+        for (String newReply : newReplies) {
+            asyncSaveImages(MiraiCodeUtility.getImages(newReply));
+        }
+
+        if (newReplies.isEmpty()) {
+            user.sendWarning("本次没有添加任何回复");
+        } else {
+            user.sendMessage("成功在现有的" + lexiconType + "「" + key + "」中" +
+                    "添加了 " + newReplies.size() + " 条随机回复，" +
+                    "该词条已有 " + replies.size() + " 条随机回复");
+            getXiaomingBot().getFileSaver().planToSave(manager);
+        }
+    }
+
+    private void addEntryImageReply(XiaomingUser user,
+                                    LexiconEntry entry,
+                                    String key, String reply,
+                                    String lexiconType) {
+        final List<Image> images = MiraiCodeUtility.getImages(reply);
+        if (images.isEmpty()) {
+            user.sendMessage("没有在当前词条回复中找到任何图片 (；′⌒`)");
+            return;
+        }
+
+        // 添加词条图片
+        for (Image image : images) {
+            entry.getReplies().add(image.serializeToMiraiCode());
+        }
+
+        // 启动多线程下载图片
+        asyncSaveImages(images);
+
+        user.sendMessage("成功在" + lexiconType + "「" + key + "」中添加了 " + images.size() + " 张图片，" +
+                "现该词条下有 " + entry.getReplies().size() + " 条随机回复");
+    }
+
+    private void addGlobalEntryImageReply(XiaomingUser user, LexiconEntry entry, String key, String reply) {
+        addEntryImageReply(user, entry, key ,reply, "全局词条");
+    }
+
+    private void addPersonalEntryImageReply(XiaomingUser user, LexiconEntry entry, String key, String reply) {
+        addEntryImageReply(user, entry, key ,reply, "私人词条");
+    }
+
+    private void addGroupEntryImageReply(XiaomingUser user, LexiconEntry entry, String key, String reply) {
+        addEntryImageReply(user, entry, key ,reply, "群聊词条");
     }
 
     private void addGlobalEntryReply(XiaomingUser user, String key, String reply) {
@@ -381,8 +474,8 @@ public class LexiconInteractor extends InteractorImpl {
     }
 
     @NonNext
-    @Filter(CommandWords.ADD + CommandWords.GLOBAL + EQUAL + IGNORE_CASE + ENTRY + " {key} {remain}")
-    @Filter(CommandWords.NEW + CommandWords.GLOBAL + EQUAL + IGNORE_CASE + ENTRY + " {key} {remain}")
+    @Filter(CommandWords.ADD + CommandWords.GLOBAL + IGNORE_CASE + ENTRY + " {key} {remain}")
+    @Filter(CommandWords.NEW + CommandWords.GLOBAL + IGNORE_CASE + ENTRY + " {key} {remain}")
     @Permission("lexicons.global.add")
     public void onAddGlobalEqualIgnoreCaseEntry(XiaomingUser user, @FilterParameter("key") String key, @FilterParameter("remain") String reply) {
         addGlobalEntry(user, LexiconMatchType.EQUAL_IGNORE_CASE, key, reply);
@@ -405,8 +498,8 @@ public class LexiconInteractor extends InteractorImpl {
     }
 
     @NonNext
-    @Filter(CommandWords.ADD + CommandWords.GLOBAL + MATCHE + ENTRY + " {key} {remain}")
-    @Filter(CommandWords.NEW + CommandWords.GLOBAL + MATCHE + ENTRY + " {key} {remain}")
+    @Filter(CommandWords.ADD + CommandWords.GLOBAL + MATCH + ENTRY + " {key} {remain}")
+    @Filter(CommandWords.NEW + CommandWords.GLOBAL + MATCH + ENTRY + " {key} {remain}")
     @Permission("lexicons.global.add")
     public void onAddGlobalMatchEntry(XiaomingUser user, @FilterParameter("key") String key, @FilterParameter("remain") String reply) {
         if (!MiraiCodeUtility.getImages(key).isEmpty()) {
@@ -421,8 +514,8 @@ public class LexiconInteractor extends InteractorImpl {
     }
 
     @NonNext
-    @Filter(CommandWords.ADD + CommandWords.GLOBAL + START + MATCHE + ENTRY + " {key} {remain}")
-    @Filter(CommandWords.NEW + CommandWords.GLOBAL + START + MATCHE + ENTRY + " {key} {remain}")
+    @Filter(CommandWords.ADD + CommandWords.GLOBAL + START + MATCH + ENTRY + " {key} {remain}")
+    @Filter(CommandWords.NEW + CommandWords.GLOBAL + START + MATCH + ENTRY + " {key} {remain}")
     @Permission("lexicons.global.add")
     public void onAddGlobalStartMatchEntry(XiaomingUser user, @FilterParameter("key") String key, @FilterParameter("remain") String reply) {
         if (!MiraiCodeUtility.getImages(key).isEmpty()) {
@@ -437,8 +530,8 @@ public class LexiconInteractor extends InteractorImpl {
     }
 
     @NonNext
-    @Filter(CommandWords.ADD + CommandWords.GLOBAL + END + MATCHE + ENTRY + " {key} {remain}")
-    @Filter(CommandWords.NEW + CommandWords.GLOBAL + END + MATCHE + ENTRY + " {key} {remain}")
+    @Filter(CommandWords.ADD + CommandWords.GLOBAL + END + MATCH + ENTRY + " {key} {remain}")
+    @Filter(CommandWords.NEW + CommandWords.GLOBAL + END + MATCH + ENTRY + " {key} {remain}")
     @Permission("lexicons.global.add")
     public void onAddGlobalEndMatchEntry(XiaomingUser user, @FilterParameter("key") String key, @FilterParameter("remain") String reply) {
         if (!MiraiCodeUtility.getImages(key).isEmpty()) {
@@ -479,8 +572,8 @@ public class LexiconInteractor extends InteractorImpl {
     }
 
     @NonNext
-    @Filter(CommandWords.ADD + CommandWords.GLOBAL + CONTAIN + MATCHE + ENTRY + " {key} {remain}")
-    @Filter(CommandWords.NEW + CommandWords.GLOBAL + CONTAIN + MATCHE + ENTRY + " {key} {remain}")
+    @Filter(CommandWords.ADD + CommandWords.GLOBAL + CONTAIN + MATCH + ENTRY + " {key} {remain}")
+    @Filter(CommandWords.NEW + CommandWords.GLOBAL + CONTAIN + MATCH + ENTRY + " {key} {remain}")
     @Permission("lexicons.global.add")
     public void onAddGlobalContainMatchEntry(XiaomingUser user, @FilterParameter("key") String key, @FilterParameter("remain") String reply) {
         if (!MiraiCodeUtility.getImages(key).isEmpty()) {
@@ -552,6 +645,36 @@ public class LexiconInteractor extends InteractorImpl {
     }
 
     @NonNext
+    @Filter(BATCH + CommandWords.ADD + CommandWords.GLOBAL + ENTRY + REPLY + " {key}")
+    @Filter(BATCH + CommandWords.NEW + CommandWords.GLOBAL + ENTRY + REPLY + " {key}")
+    @Permission("lexicons.global.add")
+    public void onAddGlobalEntryReplyOneByOne(XiaomingUser user, @FilterParameter("key") String key) {
+        addGlobalEntryReplyOneByOne(user, key);
+    }
+
+    @NonNext
+    @Filter(CommandWords.ADD + CommandWords.GLOBAL + ENTRY + IMAGE + REPLY + " {globalEntry} {remain}")
+    @Filter(CommandWords.NEW + CommandWords.GLOBAL + ENTRY + IMAGE + REPLY + " {globalEntry} {remain}")
+    @Permission("lexicons.global.add")
+    public void onAddGlobalEntryImageReply(XiaomingUser user,
+                                           @FilterParameter("globalEntry") String key,
+                                           @FilterParameter("globalEntry") LexiconEntry entry,
+                                           @FilterParameter("remain") String reply) {
+        addGlobalEntryImageReply(user, entry, key, reply);
+    }
+
+    @NonNext
+    @Filter(CommandWords.ADD + CommandWords.PERSONAL + ENTRY + IMAGE + REPLY + " {personalEntry} {remain}")
+    @Filter(CommandWords.NEW + CommandWords.PERSONAL + ENTRY + IMAGE + REPLY + " {personalEntry} {remain}")
+    @Permission("lexicons.personal.add")
+    public void onAddPersonalEntryImageReply(XiaomingUser user,
+                                           @FilterParameter("personalEntry") String key,
+                                           @FilterParameter("personalEntry") LexiconEntry entry,
+                                           @FilterParameter("remain") String reply) {
+        addPersonalEntryImageReply(user, entry, key, reply);
+    }
+
+    @NonNext
     @Filter(CommandWords.ADD + CommandWords.PERSONAL + ENTRY + " {key} {remain}")
     @Filter(CommandWords.NEW + CommandWords.PERSONAL + ENTRY + " {key} {remain}")
     @Filter(CommandWords.ADD + CommandWords.PERSONAL + EQUAL + ENTRY + " {key} {remain}")
@@ -562,8 +685,8 @@ public class LexiconInteractor extends InteractorImpl {
     }
 
     @NonNext
-    @Filter(CommandWords.ADD + CommandWords.PERSONAL + EQUAL + IGNORE_CASE + ENTRY + " {key} {remain}")
-    @Filter(CommandWords.NEW + CommandWords.PERSONAL + EQUAL + IGNORE_CASE + ENTRY + " {key} {remain}")
+    @Filter(CommandWords.ADD + CommandWords.PERSONAL + IGNORE_CASE + ENTRY + " {key} {remain}")
+    @Filter(CommandWords.NEW + CommandWords.PERSONAL + IGNORE_CASE + ENTRY + " {key} {remain}")
     @Permission("lexicons.personal.add")
     public void onAddPersonalEqualIgnoreCaseEntry(XiaomingUser user, @FilterParameter("key") String key, @FilterParameter("remain") String reply) {
         addPersonalEntry(user, LexiconMatchType.EQUAL_IGNORE_CASE, key, reply);
@@ -586,8 +709,8 @@ public class LexiconInteractor extends InteractorImpl {
     }
 
     @NonNext
-    @Filter(CommandWords.ADD + CommandWords.PERSONAL + MATCHE + ENTRY + " {key} {remain}")
-    @Filter(CommandWords.NEW + CommandWords.PERSONAL + MATCHE + ENTRY + " {key} {remain}")
+    @Filter(CommandWords.ADD + CommandWords.PERSONAL + MATCH + ENTRY + " {key} {remain}")
+    @Filter(CommandWords.NEW + CommandWords.PERSONAL + MATCH + ENTRY + " {key} {remain}")
     @Permission("lexicons.personal.add")
     public void onAddPersonalMatchEntry(XiaomingUser user, @FilterParameter("key") String key, @FilterParameter("remain") String reply) {
         if (!MiraiCodeUtility.getImages(key).isEmpty()) {
@@ -602,8 +725,8 @@ public class LexiconInteractor extends InteractorImpl {
     }
 
     @NonNext
-    @Filter(CommandWords.ADD + CommandWords.PERSONAL + START + MATCHE + ENTRY + " {key} {remain}")
-    @Filter(CommandWords.NEW + CommandWords.PERSONAL + START + MATCHE + ENTRY + " {key} {remain}")
+    @Filter(CommandWords.ADD + CommandWords.PERSONAL + START + MATCH + ENTRY + " {key} {remain}")
+    @Filter(CommandWords.NEW + CommandWords.PERSONAL + START + MATCH + ENTRY + " {key} {remain}")
     @Permission("lexicons.personal.add")
     public void onAddPersonalStartMatchEntry(XiaomingUser user, @FilterParameter("key") String key, @FilterParameter("remain") String reply) {
         if (!MiraiCodeUtility.getImages(key).isEmpty()) {
@@ -618,8 +741,8 @@ public class LexiconInteractor extends InteractorImpl {
     }
 
     @NonNext
-    @Filter(CommandWords.ADD + CommandWords.PERSONAL + END + MATCHE + ENTRY + " {key} {remain}")
-    @Filter(CommandWords.NEW + CommandWords.PERSONAL + END + MATCHE + ENTRY + " {key} {remain}")
+    @Filter(CommandWords.ADD + CommandWords.PERSONAL + END + MATCH + ENTRY + " {key} {remain}")
+    @Filter(CommandWords.NEW + CommandWords.PERSONAL + END + MATCH + ENTRY + " {key} {remain}")
     @Permission("lexicons.personal.add")
     public void onAddPersonalEndMatchEntry(XiaomingUser user, @FilterParameter("key") String key, @FilterParameter("remain") String reply) {
         if (!MiraiCodeUtility.getImages(key).isEmpty()) {
@@ -660,8 +783,8 @@ public class LexiconInteractor extends InteractorImpl {
     }
 
     @NonNext
-    @Filter(CommandWords.ADD + CommandWords.PERSONAL + CONTAIN + MATCHE + ENTRY + " {key} {remain}")
-    @Filter(CommandWords.NEW + CommandWords.PERSONAL + CONTAIN + MATCHE + ENTRY + " {key} {remain}")
+    @Filter(CommandWords.ADD + CommandWords.PERSONAL + CONTAIN + MATCH + ENTRY + " {key} {remain}")
+    @Filter(CommandWords.NEW + CommandWords.PERSONAL + CONTAIN + MATCH + ENTRY + " {key} {remain}")
     @Permission("lexicons.personal.add")
     public void onAddPersonalContainMatchEntry(XiaomingUser user, @FilterParameter("key") String key, @FilterParameter("remain") String reply) {
         if (!MiraiCodeUtility.getImages(key).isEmpty()) {
@@ -733,6 +856,25 @@ public class LexiconInteractor extends InteractorImpl {
     }
 
     @NonNext
+    @Filter(BATCH + CommandWords.ADD + CommandWords.PERSONAL + ENTRY + REPLY + " {key}")
+    @Filter(BATCH + CommandWords.NEW + CommandWords.PERSONAL + ENTRY + REPLY + " {key}")
+    @Permission("lexicons.personal.add")
+    public void onAddPersonalEntryReplyOneByOne(XiaomingUser user, @FilterParameter("key") String key) {
+        addPersonalEntryReplyOneByOne(user, key);
+    }
+
+    @NonNext
+    @Filter(CommandWords.ADD + CommandWords.GROUP + ENTRY + IMAGE + REPLY + " {groupTag} {groupEntry} {remain}")
+    @Filter(CommandWords.NEW + CommandWords.GROUP + ENTRY + IMAGE + REPLY + " {groupTag} {groupEntry} {remain}")
+    @Permission("lexicons.group.{groupTag}.add")
+    public void onAddGroupEntryImageReply(XiaomingUser user,
+                                             @FilterParameter("groupEntry") String key,
+                                             @FilterParameter("groupEntry") LexiconEntry entry,
+                                             @FilterParameter("remain") String reply) {
+        addGroupEntryImageReply(user, entry, key, reply);
+    }
+
+    @NonNext
     @Filter(CommandWords.ADD + CommandWords.GROUP + ENTRY + " {groupTag} {key} {remain}")
     @Filter(CommandWords.NEW + CommandWords.GROUP + ENTRY + " {groupTag} {key} {remain}")
     @Filter(CommandWords.ADD + CommandWords.GROUP + EQUAL + ENTRY + " {groupTag} {key} {remain}")
@@ -759,8 +901,8 @@ public class LexiconInteractor extends InteractorImpl {
     }
 
     @NonNext
-    @Filter(CommandWords.ADD + CommandWords.GROUP + MATCHE + ENTRY + " {groupTag} {key} {remain}")
-    @Filter(CommandWords.NEW + CommandWords.GROUP + MATCHE + ENTRY + " {groupTag} {key} {remain}")
+    @Filter(CommandWords.ADD + CommandWords.GROUP + MATCH + ENTRY + " {groupTag} {key} {remain}")
+    @Filter(CommandWords.NEW + CommandWords.GROUP + MATCH + ENTRY + " {groupTag} {key} {remain}")
     @Permission("lexicons.group.{groupTag}.add")
     public void onAddGroupMatchEntry(XiaomingUser user, @FilterParameter("key") String key, @FilterParameter("groupTag") String groupTag, @FilterParameter("remain") String reply) {
         if (!MiraiCodeUtility.getImages(key).isEmpty()) {
@@ -775,8 +917,8 @@ public class LexiconInteractor extends InteractorImpl {
     }
 
     @NonNext
-    @Filter(CommandWords.ADD + CommandWords.GROUP + START + MATCHE + ENTRY + " {groupTag} {key} {remain}")
-    @Filter(CommandWords.NEW + CommandWords.GROUP + START + MATCHE + ENTRY + " {groupTag} {key} {remain}")
+    @Filter(CommandWords.ADD + CommandWords.GROUP + START + MATCH + ENTRY + " {groupTag} {key} {remain}")
+    @Filter(CommandWords.NEW + CommandWords.GROUP + START + MATCH + ENTRY + " {groupTag} {key} {remain}")
     @Permission("lexicons.group.{groupTag}.add")
     public void onAddGroupStartMatchEntry(XiaomingUser user, @FilterParameter("key") String key, @FilterParameter("groupTag") String groupTag, @FilterParameter("remain") String reply) {
         if (!MiraiCodeUtility.getImages(key).isEmpty()) {
@@ -791,8 +933,8 @@ public class LexiconInteractor extends InteractorImpl {
     }
 
     @NonNext
-    @Filter(CommandWords.ADD + CommandWords.GROUP + END + MATCHE + ENTRY + " {groupTag} {key} {remain}")
-    @Filter(CommandWords.NEW + CommandWords.GROUP + END + MATCHE + ENTRY + " {groupTag} {key} {remain}")
+    @Filter(CommandWords.ADD + CommandWords.GROUP + END + MATCH + ENTRY + " {groupTag} {key} {remain}")
+    @Filter(CommandWords.NEW + CommandWords.GROUP + END + MATCH + ENTRY + " {groupTag} {key} {remain}")
     @Permission("lexicons.group.{groupTag}.add")
     public void onAddGroupEndMatchEntry(XiaomingUser user, @FilterParameter("key") String key, @FilterParameter("groupTag") String groupTag, @FilterParameter("remain") String reply) {
         if (!MiraiCodeUtility.getImages(key).isEmpty()) {
@@ -833,8 +975,8 @@ public class LexiconInteractor extends InteractorImpl {
     }
 
     @NonNext
-    @Filter(CommandWords.ADD + CommandWords.GROUP + CONTAIN + MATCHE + ENTRY + " {groupTag} {key} {remain}")
-    @Filter(CommandWords.NEW + CommandWords.GROUP + CONTAIN + MATCHE + ENTRY + " {groupTag} {key} {remain}")
+    @Filter(CommandWords.ADD + CommandWords.GROUP + CONTAIN + MATCH + ENTRY + " {groupTag} {key} {remain}")
+    @Filter(CommandWords.NEW + CommandWords.GROUP + CONTAIN + MATCH + ENTRY + " {groupTag} {key} {remain}")
     @Permission("lexicons.group.{groupTag}.add")
     public void onAddGroupContainMatchEntry(XiaomingUser user, @FilterParameter("key") String key, @FilterParameter("groupTag") String groupTag, @FilterParameter("remain") String reply) {
         if (!MiraiCodeUtility.getImages(key).isEmpty()) {
@@ -906,6 +1048,25 @@ public class LexiconInteractor extends InteractorImpl {
     }
 
     @NonNext
+    @Filter(BATCH + CommandWords.ADD + CommandWords.GROUP + ENTRY + REPLY + " {groupTag} {key}")
+    @Filter(BATCH + CommandWords.NEW + CommandWords.GROUP + ENTRY + REPLY + " {groupTag} {key}")
+    @Permission("lexicons.group.{groupTag}.add")
+    public void onAddGroupEntryReply(XiaomingUser user, @FilterParameter("key") String key, @FilterParameter("groupTag") String groupTag) {
+        addGroupEntryReplyOneByOne(user, groupTag, key);
+    }
+
+    @NonNext
+    @Filter(CommandWords.ADD + CommandWords.THIS + CommandWords.GROUP + ENTRY + IMAGE + REPLY + " {groupEntry} {remain}")
+    @Filter(CommandWords.NEW + CommandWords.THIS + CommandWords.GROUP + ENTRY + IMAGE + REPLY + " {groupEntry} {remain}")
+    @Permission("lexicons.group.{group}.add")
+    public void onAddGroupEntryImageReply(GroupXiaomingUser user,
+                                          @FilterParameter("groupEntry") String key,
+                                          @FilterParameter("groupEntry") LexiconEntry entry,
+                                          @FilterParameter("remain") String reply) {
+        addGroupEntryImageReply(user, entry, key, reply);
+    }
+
+    @NonNext
     @Filter(CommandWords.ADD + CommandWords.THIS + CommandWords.GROUP + ENTRY + " {key} {remain}")
     @Filter(CommandWords.NEW + CommandWords.THIS + CommandWords.GROUP + ENTRY + " {key} {remain}")
     @Filter(CommandWords.ADD + CommandWords.THIS + CommandWords.GROUP + EQUAL + ENTRY + " {key} {remain}")
@@ -916,8 +1077,8 @@ public class LexiconInteractor extends InteractorImpl {
     }
 
     @NonNext
-    @Filter(CommandWords.ADD + CommandWords.THIS + CommandWords.GROUP + EQUAL + IGNORE_CASE + ENTRY + " {key} {remain}")
-    @Filter(CommandWords.NEW + CommandWords.THIS + CommandWords.GROUP + EQUAL + IGNORE_CASE + ENTRY + " {key} {remain}")
+    @Filter(CommandWords.ADD + CommandWords.THIS + CommandWords.GROUP + IGNORE_CASE + ENTRY + " {key} {remain}")
+    @Filter(CommandWords.NEW + CommandWords.THIS + CommandWords.GROUP + IGNORE_CASE + ENTRY + " {key} {remain}")
     @Permission("lexicons.group.{group}.add")
     public void onAddThisGroupEqualIgnoreCaseEntry(GroupXiaomingUser user, @FilterParameter("key") String key, @FilterParameter("remain") String reply) {
         addGroupEntry(user, user.getGroupCodeString(), LexiconMatchType.EQUAL_IGNORE_CASE, key, reply);
@@ -940,8 +1101,8 @@ public class LexiconInteractor extends InteractorImpl {
     }
 
     @NonNext
-    @Filter(CommandWords.ADD + CommandWords.THIS + CommandWords.GROUP + MATCHE + ENTRY + " {key} {remain}")
-    @Filter(CommandWords.NEW + CommandWords.THIS + CommandWords.GROUP + MATCHE + ENTRY + " {key} {remain}")
+    @Filter(CommandWords.ADD + CommandWords.THIS + CommandWords.GROUP + MATCH + ENTRY + " {key} {remain}")
+    @Filter(CommandWords.NEW + CommandWords.THIS + CommandWords.GROUP + MATCH + ENTRY + " {key} {remain}")
     @Permission("lexicons.group.{group}.add")
     public void onAddThisGroupMatchEntry(GroupXiaomingUser user, @FilterParameter("key") String key, @FilterParameter("remain") String reply) {
         if (!MiraiCodeUtility.getImages(key).isEmpty()) {
@@ -956,8 +1117,8 @@ public class LexiconInteractor extends InteractorImpl {
     }
 
     @NonNext
-    @Filter(CommandWords.ADD + CommandWords.THIS + CommandWords.GROUP + START + MATCHE + ENTRY + " {key} {remain}")
-    @Filter(CommandWords.NEW + CommandWords.THIS + CommandWords.GROUP + START + MATCHE + ENTRY + " {key} {remain}")
+    @Filter(CommandWords.ADD + CommandWords.THIS + CommandWords.GROUP + START + MATCH + ENTRY + " {key} {remain}")
+    @Filter(CommandWords.NEW + CommandWords.THIS + CommandWords.GROUP + START + MATCH + ENTRY + " {key} {remain}")
     @Permission("lexicons.group.{group}.add")
     public void onAddThisGroupStartMatchEntry(GroupXiaomingUser user, @FilterParameter("key") String key, @FilterParameter("remain") String reply) {
         if (!MiraiCodeUtility.getImages(key).isEmpty()) {
@@ -972,8 +1133,8 @@ public class LexiconInteractor extends InteractorImpl {
     }
 
     @NonNext
-    @Filter(CommandWords.ADD + CommandWords.THIS + CommandWords.GROUP + END + MATCHE + ENTRY + " {key} {remain}")
-    @Filter(CommandWords.NEW + CommandWords.THIS + CommandWords.GROUP + END + MATCHE + ENTRY + " {key} {remain}")
+    @Filter(CommandWords.ADD + CommandWords.THIS + CommandWords.GROUP + END + MATCH + ENTRY + " {key} {remain}")
+    @Filter(CommandWords.NEW + CommandWords.THIS + CommandWords.GROUP + END + MATCH + ENTRY + " {key} {remain}")
     @Permission("lexicons.group.{group}.add")
     public void onAddThisGroupEndMatchEntry(GroupXiaomingUser user, @FilterParameter("key") String key, @FilterParameter("remain") String reply) {
         if (!MiraiCodeUtility.getImages(key).isEmpty()) {
@@ -1014,8 +1175,8 @@ public class LexiconInteractor extends InteractorImpl {
     }
 
     @NonNext
-    @Filter(CommandWords.ADD + CommandWords.THIS + CommandWords.GROUP + CONTAIN + MATCHE + ENTRY + " {key} {remain}")
-    @Filter(CommandWords.NEW + CommandWords.THIS + CommandWords.GROUP + CONTAIN + MATCHE + ENTRY + " {key} {remain}")
+    @Filter(CommandWords.ADD + CommandWords.THIS + CommandWords.GROUP + CONTAIN + MATCH + ENTRY + " {key} {remain}")
+    @Filter(CommandWords.NEW + CommandWords.THIS + CommandWords.GROUP + CONTAIN + MATCH + ENTRY + " {key} {remain}")
     @Permission("lexicons.group.{group}.add")
     public void onAddThisGroupContainMatchEntry(GroupXiaomingUser user, @FilterParameter("key") String key, @FilterParameter("remain") String reply) {
         if (!MiraiCodeUtility.getImages(key).isEmpty()) {
@@ -1102,6 +1263,14 @@ public class LexiconInteractor extends InteractorImpl {
     @Permission("lexicons.group.{groupTag}.add")
     public void onAddThisGroupEntryReply(GroupXiaomingUser user, @FilterParameter("key") String key, @FilterParameter("remain") String reply) {
         addGroupEntryReply(user, user.getGroupCodeString(), key, reply);
+    }
+
+    @NonNext
+    @Filter(BATCH + CommandWords.ADD + CommandWords.THIS + CommandWords.GROUP + ENTRY + REPLY + " {key}")
+    @Filter(BATCH + CommandWords.NEW + CommandWords.THIS + CommandWords.GROUP + ENTRY + REPLY + " {key}")
+    @Permission("lexicons.group.{groupTag}.add")
+    public void onAddThisGroupEntryReplyOneByOne(GroupXiaomingUser user, @FilterParameter("key") String key) {
+        addGroupEntryReplyOneByOne(user, user.getGroupCodeString(), key);
     }
 
     @Override
