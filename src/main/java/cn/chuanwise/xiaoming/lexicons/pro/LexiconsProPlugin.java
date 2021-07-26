@@ -20,8 +20,8 @@ public class LexiconsProPlugin extends XiaomingPluginImpl {
         INSTANCE = this;
         getDataFolder().mkdirs();
 
-        configuration = loadConfigurationOrSupplie(LexiconConfiguration.class, LexiconConfiguration::new);
-        lexiconManager = loadFileOrSupplie(LexiconManager.class, new File(getDataFolder(), "lexicons.json"), LexiconManager::new);
+        configuration = loadConfigurationOrSupply(LexiconConfiguration.class, LexiconConfiguration::new);
+        lexiconManager = loadFileOrSupply(LexiconManager.class, new File(getDataFolder(), "lexicons.json"), LexiconManager::new);
     }
 
     @Override

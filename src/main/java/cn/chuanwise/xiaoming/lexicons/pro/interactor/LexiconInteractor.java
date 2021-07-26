@@ -198,11 +198,12 @@ public class LexiconInteractor extends InteractorImpl {
         final Set<String> replies = entry.getReplies();
 
         // 一条一条输入词条回复
-        final ArrayList<String> newReplies = InteractorUtility.fillStringCollection(user, "你希望在" + lexiconType + "「" + key + "」中添加哪些回复呢？", "词条回复", new ArrayList<>(), true);
+        final ArrayList<String> newReplies =
+                InteractorUtility.fillStringCollection(user, "你希望在" + lexiconType + "「" + key + "」中添加哪些回复", "词条回复", new ArrayList<>(), true);
 
-        // 多线程保存图片
         for (String newReply : newReplies) {
             asyncSaveImages(MiraiCodeUtility.getImages(newReply));
+            replies.add(newReply);
         }
 
         if (newReplies.isEmpty()) {
