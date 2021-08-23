@@ -1,5 +1,6 @@
 package cn.chuanwise.xiaoming.lexicons.pro.data;
 
+import cn.chuanwise.exception.UnsupportedVersionException;
 import cn.chuanwise.utility.*;
 import cn.chuanwise.xiaoming.lexicons.pro.LexiconsProPlugin;
 import lombok.Data;
@@ -29,9 +30,10 @@ public class LexiconEntry {
                     case START_MATCH:
                         return reply;
                     case PARAMETER:
-                        return ArgumentUtility.replaceArguments(reply, matcher.getParameterFilterMatcher().getArgumentValues(input), LexiconsProPlugin.INSTANCE.getConfiguration().getMaxIterateTime());
+                        ArgumentUtility.format(reply, LexiconsProPlugin.INSTANCE.getConfiguration().getMaxIterateTime(), matcher.getParameterPattern().parse(input));
+                        break;
                     default:
-                        LexiconsProPlugin.INSTANCE.throwUnsupportedVersionException("matcherType: " + matchType);
+                        throw new UnsupportedVersionException();
                 }
             }
         }

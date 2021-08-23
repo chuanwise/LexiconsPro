@@ -2,6 +2,7 @@ package cn.chuanwise.xiaoming.lexicons.pro.data;
 
 import cn.chuanwise.toolkit.preservable.file.FilePreservableImpl;
 import cn.chuanwise.utility.CollectionUtility;
+import cn.chuanwise.utility.MapUtility;
 import lombok.Data;
 
 import java.util.*;
@@ -91,12 +92,12 @@ public class LexiconManager extends FilePreservableImpl {
     }
 
     public void addGroupEntry(String tag, LexiconEntry entry) {
-        final Set<LexiconEntry> lexiconEntries = CollectionUtility.getOrPutSupply(groupEntries, tag, HashSet::new);
+        final Set<LexiconEntry> lexiconEntries = MapUtility.getOrPutSupply(groupEntries, tag, HashSet::new);
         lexiconEntries.add(entry);
     }
 
     public void addPersonalEntry(long code, LexiconEntry entry) {
-        final Set<LexiconEntry> lexiconEntries = CollectionUtility.getOrPutSupply(personalEntries, code, HashSet::new);
+        final Set<LexiconEntry> lexiconEntries = MapUtility.getOrPutSupply(personalEntries, code, HashSet::new);
         lexiconEntries.add(entry);
     }
 

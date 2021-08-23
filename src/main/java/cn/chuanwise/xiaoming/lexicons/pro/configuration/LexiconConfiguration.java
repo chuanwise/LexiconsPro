@@ -5,5 +5,5 @@ import lombok.Data;
 
 @Data
 public class LexiconConfiguration extends FilePreservableImpl {
-    int maxIterateTime = 10;
+    int maxIterateTime;
 }

@@ -1,17 +1,17 @@
 package cn.chuanwise.xiaoming.lexicons.pro.interactor;
 
-import cn.chuanwise.annotation.Uncomplete;
+import cn.chuanwise.annotation.Incomplete ;
 import cn.chuanwise.utility.CheckUtility;
 import cn.chuanwise.utility.CollectionUtility;
 import cn.chuanwise.utility.StringUtility;
 import cn.chuanwise.xiaoming.annotation.*;
 import cn.chuanwise.xiaoming.contact.message.Message;
+import cn.chuanwise.xiaoming.interactor.SimpleInteractors;
 import cn.chuanwise.xiaoming.user.GroupXiaomingUser;
 import cn.chuanwise.xiaoming.user.XiaomingUser;
 import cn.chuanwise.xiaoming.utility.CommandWords;
 import cn.chuanwise.xiaoming.utility.InteractorUtility;
 import cn.chuanwise.xiaoming.utility.MiraiCodeUtility;
-import cn.chuanwise.xiaoming.interactor.InteractorImpl;
 import cn.chuanwise.xiaoming.lexicons.pro.LexiconsProPlugin;
 import cn.chuanwise.xiaoming.lexicons.pro.configuration.LexiconConfiguration;
 import cn.chuanwise.xiaoming.lexicons.pro.data.LexiconManager;
@@ -26,10 +26,9 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 
-public class LexiconInteractor extends InteractorImpl {
-    final LexiconsProPlugin plugin;
-    final LexiconConfiguration configuration;
-    final LexiconManager manager;
+public class LexiconInteractors extends SimpleInteractors<LexiconsProPlugin> {
+    LexiconConfiguration configuration;
+    LexiconManager manager;
 
     static final String LEXICON = "(词库|lexicon)";
     static final String ENTRY = "(词条|entry)";
@@ -50,12 +49,10 @@ public class LexiconInteractor extends InteractorImpl {
     static final String COPY = "(复制|分支|fork|copy)";
     static final String BATCH = "(批量|bat|batch)";
 
-    public LexiconInteractor(LexiconsProPlugin plugin) {
-        this.plugin = plugin;
+    @Override
+    public void onRegister() {
         this.manager = plugin.getLexiconManager();
         this.configuration = plugin.getConfiguration();
-
-        setUsageCommandFormat(LEXICON + CommandWords.HELP);
     }
 
     @NonNext
@@ -69,7 +66,7 @@ public class LexiconInteractor extends InteractorImpl {
                 "参数：当输入符合触发词的参数时，提取其中的参数并替换随机回复。例如，触发词「禁止{what}」，回复「禁止禁止{what}」，则发送「禁止复读」时会回复「禁止禁止复读」");
     }
 
-    @Uncomplete
+    @Incomplete
     private void onForkEntry(XiaomingUser user,
                              String key,
                              String fromLexiconType,
@@ -117,12 +114,12 @@ public class LexiconInteractor extends InteractorImpl {
         final LexiconMatcher matcher = new LexiconMatcher(matchType, key);
         entry.addMatcher(matcher);
         entry.addReply(reply);
-        getXiaomingBot().getFileSaver().planToSave(manager);
+        getXiaomingBot().getFileSaver().readyToSave(manager);
 
         asyncSaveImages(MiraiCodeUtility.getImages(key));
         asyncSaveImages(MiraiCodeUtility.getImages(reply));
 
-        user.sendMessage("成功创建新的" + lexiconType + "：" + matcher + " => {remain}");
+        user.sendMessage("成功创建新的" + lexiconType + "：" + matcher + " => " + reply);
         onAddNewEntry.accept(entry);
     }
 
@@ -162,7 +159,7 @@ public class LexiconInteractor extends InteractorImpl {
         }
 
         entry.addReply(reply);
-        getXiaomingBot().getFileSaver().planToSave(manager);
+        getXiaomingBot().getFileSaver().readyToSave(manager);
 
         asyncSaveImages(MiraiCodeUtility.getImages(key));
         asyncSaveImages(MiraiCodeUtility.getImages(reply));
@@ -196,10 +193,12 @@ public class LexiconInteractor extends InteractorImpl {
         }
 
         final Set<String> replies = entry.getReplies();
+        user.sendMessage("你希望在" + lexiconType + "「" + key + "」中添加哪些回复呢？{lang.inputItOneByOneAndEndsWithStop}");
 
         // 一条一条输入词条回复
+        // 不直接往 replies 添加的原因是需要保存一下图片资源
         final ArrayList<String> newReplies =
-                InteractorUtility.fillStringCollection(user, "你希望在" + lexiconType + "「" + key + "」中添加哪些回复", "词条回复", new ArrayList<>(), true);
+                InteractorUtility.fillStringCollection(user, new ArrayList<>(),"词条回复");
 
         for (String newReply : newReplies) {
             asyncSaveImages(MiraiCodeUtility.getImages(newReply));
@@ -212,7 +211,7 @@ public class LexiconInteractor extends InteractorImpl {
             user.sendMessage("成功在现有的" + lexiconType + "「" + key + "」中" +
                     "添加了 " + newReplies.size() + " 条随机回复，" +
                     "该词条已有 " + replies.size() + " 条随机回复");
-            getXiaomingBot().getFileSaver().planToSave(manager);
+            getXiaomingBot().getFileSaver().readyToSave(manager);
         }
     }
 
@@ -285,7 +284,7 @@ public class LexiconInteractor extends InteractorImpl {
                 user.sendMessage("成功删除该" + lexiconType + "中的唯一的匹配规则「" + matchers.iterator().next() + "」。" +
                         "因其不再具备任何匹配规则，整个词条也被一并删除");
                 onRemoveEntry.accept(entry);
-                getXiaomingBot().getFileSaver().planToSave(manager);
+                getXiaomingBot().getFileSaver().readyToSave(manager);
             } else {
                 user.sendMessage("成功放弃本次删除行为");
             }
@@ -299,13 +298,13 @@ public class LexiconInteractor extends InteractorImpl {
         user.sendMessage("成功删除该" + lexiconType + "的匹配规则「" + lexiconMatcher + "」。" +
                 "其还剩 " + matchers.size() + " 条匹配规则。");
 
-        getXiaomingBot().getFileSaver().planToSave(manager);
+        getXiaomingBot().getFileSaver().readyToSave(manager);
     }
 
     private void removeEntry(XiaomingUser user, LexiconEntry entry, String key, String lexiconType, Consumer<LexiconEntry> onRemoveEntry) {
         user.sendMessage("成功删除" + lexiconType + "「" + key + "」，其详细信息：\n" + entry);
         onRemoveEntry.accept(entry);
-        getXiaomingBot().getFileSaver().planToSave(manager);
+        getXiaomingBot().getFileSaver().readyToSave(manager);
     }
 
     private void removeGlobalEntry(XiaomingUser user, LexiconEntry entry, String key) {
@@ -358,7 +357,7 @@ public class LexiconInteractor extends InteractorImpl {
                 user.sendMessage("成功删除" + lexiconType + "「" + key + "」中的唯一的随机回答「" + entry.getReplies().iterator().next() + "」。" +
                         "因其不再具备任何随机回答，整个词条也被一并删除");
                 onRemoveEntry.accept(entry);
-                getXiaomingBot().getFileSaver().planToSave(manager);
+                getXiaomingBot().getFileSaver().readyToSave(manager);
             } else {
                 user.sendMessage("成功放弃本次删除行为");
             }
@@ -366,7 +365,7 @@ public class LexiconInteractor extends InteractorImpl {
         }
 
         entry.getReplies().remove(reply);
-        getXiaomingBot().getFileSaver().planToSave(manager);
+        getXiaomingBot().getFileSaver().readyToSave(manager);
 
         if (entry.getReplies().isEmpty()) {
             onRemoveEntry.accept(entry);
@@ -387,7 +386,7 @@ public class LexiconInteractor extends InteractorImpl {
                 user.sendMessage("成功删除" + lexiconType + "「" + key + "」中的唯一的随机回答「" + entry.getReplies().iterator().next() + "」。" +
                         "因其不再具备任何随机回答，整个词条也被一并删除");
                 onRemoveEntry.accept(entry);
-                getXiaomingBot().getFileSaver().planToSave(manager);
+                getXiaomingBot().getFileSaver().readyToSave(manager);
             } else {
                 user.sendMessage("成功放弃本次删除行为");
             }
@@ -399,13 +398,13 @@ public class LexiconInteractor extends InteractorImpl {
         user.sendMessage("成功删除" +lexiconType + "「" + key + "」中的随机回答「" + reply + "」。" +
                 "该词条还有 " + entry.getReplies().size() + " 个随机回答");
 
-        getXiaomingBot().getFileSaver().planToSave(manager);
+        getXiaomingBot().getFileSaver().readyToSave(manager);
     }
 
     @NonNext
     @WhenQuiet
     @WhenExternal
-    @Filter(value = "", pattern = FilterPattern.STARTS_WITH, enableUsage = false)
+    @Filter(value = "", pattern = FilterPattern.START_EQUAL)
     public boolean onMessage(XiaomingUser user, Message message) {
         final String serializedMessage = message.serialize();
         LexiconEntry entry = null;
@@ -460,49 +459,49 @@ public class LexiconInteractor extends InteractorImpl {
             throw new IllegalStateException("ansewer for input: " + serializedMessage + " is empty string!");
         }
 
-        user.getContact().send(reply);
+        user.getContact().send(user.format(reply));
         return true;
     }
 
     @NonNext
-    @Filter(CommandWords.ADD + CommandWords.GLOBAL + ENTRY + " {key} {remain}")
-    @Filter(CommandWords.NEW + CommandWords.GLOBAL + ENTRY + " {key} {remain}")
-    @Filter(CommandWords.ADD + CommandWords.GLOBAL + EQUAL + ENTRY + " {key} {remain}")
-    @Filter(CommandWords.NEW + CommandWords.GLOBAL + EQUAL + ENTRY + " {key} {remain}")
+    @Filter(CommandWords.ADD + CommandWords.GLOBAL + ENTRY + " {触发词} {r:回复}")
+    @Filter(CommandWords.NEW + CommandWords.GLOBAL + ENTRY + " {触发词} {r:回复}")
+    @Filter(CommandWords.ADD + CommandWords.GLOBAL + EQUAL + ENTRY + " {触发词} {r:回复}")
+    @Filter(CommandWords.NEW + CommandWords.GLOBAL + EQUAL + ENTRY + " {触发词} {r:回复}")
     @Permission("lexicons.global.add")
-    public void onAddGlobalEqualEntry(XiaomingUser user, @FilterParameter("key") String key, @FilterParameter("remain") String reply) {
+    public void onAddGlobalEqualEntry(XiaomingUser user, @FilterParameter("触发词") String key, @FilterParameter("回复") String reply) {
         addGlobalEntry(user, LexiconMatchType.EQUAL, key, reply);
     }
 
     @NonNext
-    @Filter(CommandWords.ADD + CommandWords.GLOBAL + IGNORE_CASE + ENTRY + " {key} {remain}")
-    @Filter(CommandWords.NEW + CommandWords.GLOBAL + IGNORE_CASE + ENTRY + " {key} {remain}")
+    @Filter(CommandWords.ADD + CommandWords.GLOBAL + IGNORE_CASE + ENTRY + " {触发词} {r:回复}")
+    @Filter(CommandWords.NEW + CommandWords.GLOBAL + IGNORE_CASE + ENTRY + " {触发词} {r:回复}")
     @Permission("lexicons.global.add")
-    public void onAddGlobalEqualIgnoreCaseEntry(XiaomingUser user, @FilterParameter("key") String key, @FilterParameter("remain") String reply) {
+    public void onAddGlobalEqualIgnoreCaseEntry(XiaomingUser user, @FilterParameter("触发词") String key, @FilterParameter("回复") String reply) {
         addGlobalEntry(user, LexiconMatchType.EQUAL_IGNORE_CASE, key, reply);
     }
 
     @NonNext
-    @Filter(CommandWords.ADD + CommandWords.GLOBAL + START + EQUAL + ENTRY + " {key} {remain}")
-    @Filter(CommandWords.NEW + CommandWords.GLOBAL + START + EQUAL + ENTRY + " {key} {remain}")
+    @Filter(CommandWords.ADD + CommandWords.GLOBAL + START + EQUAL + ENTRY + " {触发词} {r:回复}")
+    @Filter(CommandWords.NEW + CommandWords.GLOBAL + START + EQUAL + ENTRY + " {触发词} {r:回复}")
     @Permission("lexicons.global.add")
-    public void onAddGlobalStartEqualEntry(XiaomingUser user, @FilterParameter("key") String key, @FilterParameter("remain") String reply) {
+    public void onAddGlobalStartEqualEntry(XiaomingUser user, @FilterParameter("触发词") String key, @FilterParameter("回复") String reply) {
         addGlobalEntry(user, LexiconMatchType.START_EQUAL, key, reply);
     }
 
     @NonNext
-    @Filter(CommandWords.ADD + CommandWords.GLOBAL + END + EQUAL + ENTRY + " {key} {remain}")
-    @Filter(CommandWords.NEW + CommandWords.GLOBAL + END + EQUAL + ENTRY + " {key} {remain}")
+    @Filter(CommandWords.ADD + CommandWords.GLOBAL + END + EQUAL + ENTRY + " {触发词} {r:回复}")
+    @Filter(CommandWords.NEW + CommandWords.GLOBAL + END + EQUAL + ENTRY + " {触发词} {r:回复}")
     @Permission("lexicons.global.add")
-    public void onAddGlobalEndEqualEntry(XiaomingUser user, @FilterParameter("key") String key, @FilterParameter("remain") String reply) {
+    public void onAddGlobalEndEqualEntry(XiaomingUser user, @FilterParameter("触发词") String key, @FilterParameter("回复") String reply) {
         addGlobalEntry(user, LexiconMatchType.END_EQUAL, key, reply);
     }
 
     @NonNext
-    @Filter(CommandWords.ADD + CommandWords.GLOBAL + MATCH + ENTRY + " {key} {remain}")
-    @Filter(CommandWords.NEW + CommandWords.GLOBAL + MATCH + ENTRY + " {key} {remain}")
+    @Filter(CommandWords.ADD + CommandWords.GLOBAL + MATCH + ENTRY + " {触发词} {r:回复}")
+    @Filter(CommandWords.NEW + CommandWords.GLOBAL + MATCH + ENTRY + " {触发词} {r:回复}")
     @Permission("lexicons.global.add")
-    public void onAddGlobalMatchEntry(XiaomingUser user, @FilterParameter("key") String key, @FilterParameter("remain") String reply) {
+    public void onAddGlobalMatchEntry(XiaomingUser user, @FilterParameter("触发词") String key, @FilterParameter("回复") String reply) {
         if (!MiraiCodeUtility.getImages(key).isEmpty()) {
             user.sendError("有关正则表达式的匹配规则中不能包含图片");
             return;
@@ -510,15 +509,15 @@ public class LexiconInteractor extends InteractorImpl {
         try {
             addGlobalEntry(user, LexiconMatchType.MATCH, MiraiCodeUtility.contentToString(key), reply);
         } catch (Exception exception) {
-            user.sendError("正则表达式「{key}」有错误：" + exception + "，请仔细核对。");
+            user.sendError("正则表达式「" + key + "」有错误：" + exception + "，请仔细核对。");
         }
     }
 
     @NonNext
-    @Filter(CommandWords.ADD + CommandWords.GLOBAL + START + MATCH + ENTRY + " {key} {remain}")
-    @Filter(CommandWords.NEW + CommandWords.GLOBAL + START + MATCH + ENTRY + " {key} {remain}")
+    @Filter(CommandWords.ADD + CommandWords.GLOBAL + START + MATCH + ENTRY + " {触发词} {r:回复}")
+    @Filter(CommandWords.NEW + CommandWords.GLOBAL + START + MATCH + ENTRY + " {触发词} {r:回复}")
     @Permission("lexicons.global.add")
-    public void onAddGlobalStartMatchEntry(XiaomingUser user, @FilterParameter("key") String key, @FilterParameter("remain") String reply) {
+    public void onAddGlobalStartMatchEntry(XiaomingUser user, @FilterParameter("触发词") String key, @FilterParameter("回复") String reply) {
         if (!MiraiCodeUtility.getImages(key).isEmpty()) {
             user.sendError("有关正则表达式的匹配规则中不能包含图片");
             return;
@@ -526,15 +525,15 @@ public class LexiconInteractor extends InteractorImpl {
         try {
             addGlobalEntry(user, LexiconMatchType.START_MATCH, MiraiCodeUtility.contentToString(key), reply);
         } catch (Exception exception) {
-            user.sendError("正则表达式「{key}」有错误：" + exception + "，请仔细核对。");
+            user.sendError("正则表达式「{args.触发词}」有错误：{context.exception}，请仔细核对", exception);
         }
     }
 
     @NonNext
-    @Filter(CommandWords.ADD + CommandWords.GLOBAL + END + MATCH + ENTRY + " {key} {remain}")
-    @Filter(CommandWords.NEW + CommandWords.GLOBAL + END + MATCH + ENTRY + " {key} {remain}")
+    @Filter(CommandWords.ADD + CommandWords.GLOBAL + END + MATCH + ENTRY + " {触发词} {r:回复}")
+    @Filter(CommandWords.NEW + CommandWords.GLOBAL + END + MATCH + ENTRY + " {触发词} {r:回复}")
     @Permission("lexicons.global.add")
-    public void onAddGlobalEndMatchEntry(XiaomingUser user, @FilterParameter("key") String key, @FilterParameter("remain") String reply) {
+    public void onAddGlobalEndMatchEntry(XiaomingUser user, @FilterParameter("触发词") String key, @FilterParameter("回复") String reply) {
         if (!MiraiCodeUtility.getImages(key).isEmpty()) {
             user.sendError("有关正则表达式的匹配规则中不能包含图片");
             return;
@@ -542,15 +541,15 @@ public class LexiconInteractor extends InteractorImpl {
         try {
             addGlobalEntry(user, LexiconMatchType.END_MATCH, MiraiCodeUtility.contentToString(key), reply);
         } catch (Exception exception) {
-            user.sendError("正则表达式「{key}」有错误：" + exception + "，请仔细核对。");
+            user.sendError("正则表达式「" + key + "」有错误：" + exception + "，请仔细核对。");
         }
     }
 
     @NonNext
-    @Filter(CommandWords.ADD + CommandWords.GLOBAL + PARAMETER + ENTRY + " {key} {remain}")
-    @Filter(CommandWords.NEW + CommandWords.GLOBAL + PARAMETER + ENTRY + " {key} {remain}")
+    @Filter(CommandWords.ADD + CommandWords.GLOBAL + PARAMETER + ENTRY + " {触发词} {r:回复}")
+    @Filter(CommandWords.NEW + CommandWords.GLOBAL + PARAMETER + ENTRY + " {触发词} {r:回复}")
     @Permission("lexicons.global.add")
-    public void onAddGlobalParameterEntry(XiaomingUser user, @FilterParameter("key") String key, @FilterParameter("remain") String reply) {
+    public void onAddGlobalParameterEntry(XiaomingUser user, @FilterParameter("触发词") String key, @FilterParameter("回复") String reply) {
         if (!MiraiCodeUtility.getImages(key).isEmpty()) {
             user.sendError("有关参数的匹配规则中不能包含图片");
             return;
@@ -558,25 +557,25 @@ public class LexiconInteractor extends InteractorImpl {
         try {
             addGlobalEntry(user, LexiconMatchType.PARAMETER, MiraiCodeUtility.contentToString(key), reply);
         } catch (Exception exception) {
-            user.sendError("正则表达式「{key}」有错误：" + exception + "，请仔细核对。");
+            user.sendError("正则表达式「" + key + "」有错误：" + exception + "，请仔细核对。");
         }
     }
 
     @NonNext
-    @Filter(CommandWords.ADD + CommandWords.GLOBAL + CONTAIN + ENTRY + " {key} {remain}")
-    @Filter(CommandWords.NEW + CommandWords.GLOBAL + CONTAIN + ENTRY + " {key} {remain}")
-    @Filter(CommandWords.ADD + CommandWords.GLOBAL + CONTAIN + EQUAL + ENTRY + " {key} {remain}")
-    @Filter(CommandWords.NEW + CommandWords.GLOBAL + CONTAIN + EQUAL + ENTRY + " {key} {remain}")
+    @Filter(CommandWords.ADD + CommandWords.GLOBAL + CONTAIN + ENTRY + " {触发词} {r:回复}")
+    @Filter(CommandWords.NEW + CommandWords.GLOBAL + CONTAIN + ENTRY + " {触发词} {r:回复}")
+    @Filter(CommandWords.ADD + CommandWords.GLOBAL + CONTAIN + EQUAL + ENTRY + " {触发词} {r:回复}")
+    @Filter(CommandWords.NEW + CommandWords.GLOBAL + CONTAIN + EQUAL + ENTRY + " {触发词} {r:回复}")
     @Permission("lexicons.global.add")
-    public void onAddGlobalContainEqualEntry(XiaomingUser user, @FilterParameter("key") String key, @FilterParameter("remain") String reply) {
+    public void onAddGlobalContainEqualEntry(XiaomingUser user, @FilterParameter("触发词") String key, @FilterParameter("回复") String reply) {
         addGlobalEntry(user, LexiconMatchType.CONTAIN_EQUAL, key, reply);
     }
 
     @NonNext
-    @Filter(CommandWords.ADD + CommandWords.GLOBAL + CONTAIN + MATCH + ENTRY + " {key} {remain}")
-    @Filter(CommandWords.NEW + CommandWords.GLOBAL + CONTAIN + MATCH + ENTRY + " {key} {remain}")
+    @Filter(CommandWords.ADD + CommandWords.GLOBAL + CONTAIN + MATCH + ENTRY + " {触发词} {r:回复}")
+    @Filter(CommandWords.NEW + CommandWords.GLOBAL + CONTAIN + MATCH + ENTRY + " {触发词} {r:回复}")
     @Permission("lexicons.global.add")
-    public void onAddGlobalContainMatchEntry(XiaomingUser user, @FilterParameter("key") String key, @FilterParameter("remain") String reply) {
+    public void onAddGlobalContainMatchEntry(XiaomingUser user, @FilterParameter("触发词") String key, @FilterParameter("回复") String reply) {
         if (!MiraiCodeUtility.getImages(key).isEmpty()) {
             user.sendError("有关正则表达式的匹配规则中不能包含图片");
             return;
@@ -584,7 +583,7 @@ public class LexiconInteractor extends InteractorImpl {
         try {
             addGlobalEntry(user, LexiconMatchType.CONTAIN_MATCH, key, reply);
         } catch (Exception exception) {
-            user.sendError("正则表达式「{key}」有错误：" + exception + "，请仔细核对。");
+            user.sendError("正则表达式「" + key + "」有错误：" + exception + "，请仔细核对。");
         }
     }
 
@@ -624,9 +623,9 @@ public class LexiconInteractor extends InteractorImpl {
     }
 
     @NonNext
-    @Filter(CommandWords.REMOVE + CommandWords.GLOBAL + ENTRY + REPLY + " {globalEntry} {remain}")
+    @Filter(CommandWords.REMOVE + CommandWords.GLOBAL + ENTRY + REPLY + " {globalEntry} {r:回复}")
     @Permission("lexicons.global.remove")
-    public void onRemoveGlobalEntryReply(XiaomingUser user, @FilterParameter("globalEntry") LexiconEntry entry, @FilterParameter("globalEntry") String key, @FilterParameter("remain") String reply) {
+    public void onRemoveGlobalEntryReply(XiaomingUser user, @FilterParameter("globalEntry") LexiconEntry entry, @FilterParameter("globalEntry") String key, @FilterParameter("回复") String reply) {
         removeGlobalEntryReply(user, entry, key, reply);
     }
 
@@ -638,82 +637,82 @@ public class LexiconInteractor extends InteractorImpl {
     }
 
     @NonNext
-    @Filter(CommandWords.ADD + CommandWords.GLOBAL + ENTRY + REPLY + " {key} {remain}")
-    @Filter(CommandWords.NEW + CommandWords.GLOBAL + ENTRY + REPLY + " {key} {remain}")
+    @Filter(CommandWords.ADD + CommandWords.GLOBAL + ENTRY + REPLY + " {触发词} {r:回复}")
+    @Filter(CommandWords.NEW + CommandWords.GLOBAL + ENTRY + REPLY + " {触发词} {r:回复}")
     @Permission("lexicons.global.add")
-    public void onAddGlobalEntryReply(XiaomingUser user, @FilterParameter("key") String key, @FilterParameter("remain") String reply) {
+    public void onAddGlobalEntryReply(XiaomingUser user, @FilterParameter("触发词") String key, @FilterParameter("回复") String reply) {
         addGlobalEntryReply(user, key, reply);
     }
 
     @NonNext
-    @Filter(BATCH + CommandWords.ADD + CommandWords.GLOBAL + ENTRY + REPLY + " {key}")
-    @Filter(BATCH + CommandWords.NEW + CommandWords.GLOBAL + ENTRY + REPLY + " {key}")
+    @Filter(BATCH + CommandWords.ADD + CommandWords.GLOBAL + ENTRY + REPLY + " {触发词}")
+    @Filter(BATCH + CommandWords.NEW + CommandWords.GLOBAL + ENTRY + REPLY + " {触发词}")
     @Permission("lexicons.global.add")
-    public void onAddGlobalEntryReplyOneByOne(XiaomingUser user, @FilterParameter("key") String key) {
+    public void onAddGlobalEntryReplyOneByOne(XiaomingUser user, @FilterParameter("触发词") String key) {
         addGlobalEntryReplyOneByOne(user, key);
     }
 
     @NonNext
-    @Filter(CommandWords.ADD + CommandWords.GLOBAL + ENTRY + IMAGE + REPLY + " {globalEntry} {remain}")
-    @Filter(CommandWords.NEW + CommandWords.GLOBAL + ENTRY + IMAGE + REPLY + " {globalEntry} {remain}")
+    @Filter(CommandWords.ADD + CommandWords.GLOBAL + ENTRY + IMAGE + REPLY + " {globalEntry} {r:回复}")
+    @Filter(CommandWords.NEW + CommandWords.GLOBAL + ENTRY + IMAGE + REPLY + " {globalEntry} {r:回复}")
     @Permission("lexicons.global.add")
     public void onAddGlobalEntryImageReply(XiaomingUser user,
                                            @FilterParameter("globalEntry") String key,
                                            @FilterParameter("globalEntry") LexiconEntry entry,
-                                           @FilterParameter("remain") String reply) {
+                                           @FilterParameter("回复") String reply) {
         addGlobalEntryImageReply(user, entry, key, reply);
     }
 
     @NonNext
-    @Filter(CommandWords.ADD + CommandWords.PERSONAL + ENTRY + IMAGE + REPLY + " {personalEntry} {remain}")
-    @Filter(CommandWords.NEW + CommandWords.PERSONAL + ENTRY + IMAGE + REPLY + " {personalEntry} {remain}")
+    @Filter(CommandWords.ADD + CommandWords.PERSONAL + ENTRY + IMAGE + REPLY + " {私人词条} {r:回复}")
+    @Filter(CommandWords.NEW + CommandWords.PERSONAL + ENTRY + IMAGE + REPLY + " {私人词条} {r:回复}")
     @Permission("lexicons.personal.add")
     public void onAddPersonalEntryImageReply(XiaomingUser user,
-                                           @FilterParameter("personalEntry") String key,
-                                           @FilterParameter("personalEntry") LexiconEntry entry,
-                                           @FilterParameter("remain") String reply) {
+                                           @FilterParameter("私人词条") String key,
+                                           @FilterParameter("私人词条") LexiconEntry entry,
+                                           @FilterParameter("回复") String reply) {
         addPersonalEntryImageReply(user, entry, key, reply);
     }
 
     @NonNext
-    @Filter(CommandWords.ADD + CommandWords.PERSONAL + ENTRY + " {key} {remain}")
-    @Filter(CommandWords.NEW + CommandWords.PERSONAL + ENTRY + " {key} {remain}")
-    @Filter(CommandWords.ADD + CommandWords.PERSONAL + EQUAL + ENTRY + " {key} {remain}")
-    @Filter(CommandWords.NEW + CommandWords.PERSONAL + EQUAL + ENTRY + " {key} {remain}")
+    @Filter(CommandWords.ADD + CommandWords.PERSONAL + ENTRY + " {触发词} {r:回复}")
+    @Filter(CommandWords.NEW + CommandWords.PERSONAL + ENTRY + " {触发词} {r:回复}")
+    @Filter(CommandWords.ADD + CommandWords.PERSONAL + EQUAL + ENTRY + " {触发词} {r:回复}")
+    @Filter(CommandWords.NEW + CommandWords.PERSONAL + EQUAL + ENTRY + " {触发词} {r:回复}")
     @Permission("lexicons.personal.add")
-    public void onAddPersonalEqualEntry(XiaomingUser user, @FilterParameter("key") String key, @FilterParameter("remain") String reply) {
+    public void onAddPersonalEqualEntry(XiaomingUser user, @FilterParameter("触发词") String key, @FilterParameter("回复") String reply) {
         addPersonalEntry(user, LexiconMatchType.EQUAL, key, reply);
     }
 
     @NonNext
-    @Filter(CommandWords.ADD + CommandWords.PERSONAL + IGNORE_CASE + ENTRY + " {key} {remain}")
-    @Filter(CommandWords.NEW + CommandWords.PERSONAL + IGNORE_CASE + ENTRY + " {key} {remain}")
+    @Filter(CommandWords.ADD + CommandWords.PERSONAL + IGNORE_CASE + ENTRY + " {触发词} {r:回复}")
+    @Filter(CommandWords.NEW + CommandWords.PERSONAL + IGNORE_CASE + ENTRY + " {触发词} {r:回复}")
     @Permission("lexicons.personal.add")
-    public void onAddPersonalEqualIgnoreCaseEntry(XiaomingUser user, @FilterParameter("key") String key, @FilterParameter("remain") String reply) {
+    public void onAddPersonalEqualIgnoreCaseEntry(XiaomingUser user, @FilterParameter("触发词") String key, @FilterParameter("回复") String reply) {
         addPersonalEntry(user, LexiconMatchType.EQUAL_IGNORE_CASE, key, reply);
     }
 
     @NonNext
-    @Filter(CommandWords.ADD + CommandWords.PERSONAL + START + EQUAL + ENTRY + " {key} {remain}")
-    @Filter(CommandWords.NEW + CommandWords.PERSONAL + START + EQUAL + ENTRY + " {key} {remain}")
+    @Filter(CommandWords.ADD + CommandWords.PERSONAL + START + EQUAL + ENTRY + " {触发词} {r:回复}")
+    @Filter(CommandWords.NEW + CommandWords.PERSONAL + START + EQUAL + ENTRY + " {触发词} {r:回复}")
     @Permission("lexicons.personal.add")
-    public void onAddPersonalStartEqualEntry(XiaomingUser user, @FilterParameter("key") String key, @FilterParameter("remain") String reply) {
+    public void onAddPersonalStartEqualEntry(XiaomingUser user, @FilterParameter("触发词") String key, @FilterParameter("回复") String reply) {
         addPersonalEntry(user, LexiconMatchType.START_EQUAL, key, reply);
     }
 
     @NonNext
-    @Filter(CommandWords.ADD + CommandWords.PERSONAL + END + EQUAL + ENTRY + " {key} {remain}")
-    @Filter(CommandWords.NEW + CommandWords.PERSONAL + END + EQUAL + ENTRY + " {key} {remain}")
+    @Filter(CommandWords.ADD + CommandWords.PERSONAL + END + EQUAL + ENTRY + " {触发词} {r:回复}")
+    @Filter(CommandWords.NEW + CommandWords.PERSONAL + END + EQUAL + ENTRY + " {触发词} {r:回复}")
     @Permission("lexicons.personal.add")
-    public void onAddPersonalEndEqualEntry(XiaomingUser user, @FilterParameter("key") String key, @FilterParameter("remain") String reply) {
+    public void onAddPersonalEndEqualEntry(XiaomingUser user, @FilterParameter("触发词") String key, @FilterParameter("回复") String reply) {
         addPersonalEntry(user, LexiconMatchType.END_EQUAL, key, reply);
     }
 
     @NonNext
-    @Filter(CommandWords.ADD + CommandWords.PERSONAL + MATCH + ENTRY + " {key} {remain}")
-    @Filter(CommandWords.NEW + CommandWords.PERSONAL + MATCH + ENTRY + " {key} {remain}")
+    @Filter(CommandWords.ADD + CommandWords.PERSONAL + MATCH + ENTRY + " {触发词} {r:回复}")
+    @Filter(CommandWords.NEW + CommandWords.PERSONAL + MATCH + ENTRY + " {触发词} {r:回复}")
     @Permission("lexicons.personal.add")
-    public void onAddPersonalMatchEntry(XiaomingUser user, @FilterParameter("key") String key, @FilterParameter("remain") String reply) {
+    public void onAddPersonalMatchEntry(XiaomingUser user, @FilterParameter("触发词") String key, @FilterParameter("回复") String reply) {
         if (!MiraiCodeUtility.getImages(key).isEmpty()) {
             user.sendError("有关正则表达式的匹配规则中不能包含图片");
             return;
@@ -721,15 +720,15 @@ public class LexiconInteractor extends InteractorImpl {
         try {
             addPersonalEntry(user, LexiconMatchType.MATCH, MiraiCodeUtility.contentToString(key), reply);
         } catch (Exception exception) {
-            user.sendError("正则表达式「{key}」有错误：" + exception + "，请仔细核对。");
+            user.sendError("正则表达式「" + key + "」有错误：" + exception + "，请仔细核对。");
         }
     }
 
     @NonNext
-    @Filter(CommandWords.ADD + CommandWords.PERSONAL + START + MATCH + ENTRY + " {key} {remain}")
-    @Filter(CommandWords.NEW + CommandWords.PERSONAL + START + MATCH + ENTRY + " {key} {remain}")
+    @Filter(CommandWords.ADD + CommandWords.PERSONAL + START + MATCH + ENTRY + " {触发词} {r:回复}")
+    @Filter(CommandWords.NEW + CommandWords.PERSONAL + START + MATCH + ENTRY + " {触发词} {r:回复}")
     @Permission("lexicons.personal.add")
-    public void onAddPersonalStartMatchEntry(XiaomingUser user, @FilterParameter("key") String key, @FilterParameter("remain") String reply) {
+    public void onAddPersonalStartMatchEntry(XiaomingUser user, @FilterParameter("触发词") String key, @FilterParameter("回复") String reply) {
         if (!MiraiCodeUtility.getImages(key).isEmpty()) {
             user.sendError("有关正则表达式的匹配规则中不能包含图片");
             return;
@@ -737,15 +736,15 @@ public class LexiconInteractor extends InteractorImpl {
         try {
             addPersonalEntry(user, LexiconMatchType.START_MATCH, MiraiCodeUtility.contentToString(key), reply);
         } catch (Exception exception) {
-            user.sendError("正则表达式「{key}」有错误：" + exception + "，请仔细核对。");
+            user.sendError("正则表达式「" + key + "」有错误：" + exception + "，请仔细核对。");
         }
     }
 
     @NonNext
-    @Filter(CommandWords.ADD + CommandWords.PERSONAL + END + MATCH + ENTRY + " {key} {remain}")
-    @Filter(CommandWords.NEW + CommandWords.PERSONAL + END + MATCH + ENTRY + " {key} {remain}")
+    @Filter(CommandWords.ADD + CommandWords.PERSONAL + END + MATCH + ENTRY + " {触发词} {r:回复}")
+    @Filter(CommandWords.NEW + CommandWords.PERSONAL + END + MATCH + ENTRY + " {触发词} {r:回复}")
     @Permission("lexicons.personal.add")
-    public void onAddPersonalEndMatchEntry(XiaomingUser user, @FilterParameter("key") String key, @FilterParameter("remain") String reply) {
+    public void onAddPersonalEndMatchEntry(XiaomingUser user, @FilterParameter("触发词") String key, @FilterParameter("回复") String reply) {
         if (!MiraiCodeUtility.getImages(key).isEmpty()) {
             user.sendError("有关正则表达式的匹配规则中不能包含图片");
             return;
@@ -753,15 +752,15 @@ public class LexiconInteractor extends InteractorImpl {
         try {
             addPersonalEntry(user, LexiconMatchType.END_MATCH, MiraiCodeUtility.contentToString(key), reply);
         } catch (Exception exception) {
-            user.sendError("正则表达式「{key}」有错误：" + exception + "，请仔细核对。");
+            user.sendError("正则表达式「" + key + "」有错误：" + exception + "，请仔细核对。");
         }
     }
 
     @NonNext
-    @Filter(CommandWords.ADD + CommandWords.PERSONAL + PARAMETER + ENTRY + " {key} {remain}")
-    @Filter(CommandWords.NEW + CommandWords.PERSONAL + PARAMETER + ENTRY + " {key} {remain}")
+    @Filter(CommandWords.ADD + CommandWords.PERSONAL + PARAMETER + ENTRY + " {触发词} {r:回复}")
+    @Filter(CommandWords.NEW + CommandWords.PERSONAL + PARAMETER + ENTRY + " {触发词} {r:回复}")
     @Permission("lexicons.personal.add")
-    public void onAddPersonalParameterEntry(XiaomingUser user, @FilterParameter("key") String key, @FilterParameter("remain") String reply) {
+    public void onAddPersonalParameterEntry(XiaomingUser user, @FilterParameter("触发词") String key, @FilterParameter("回复") String reply) {
         if (!MiraiCodeUtility.getImages(key).isEmpty()) {
             user.sendError("有关参数的匹配规则中不能包含图片");
             return;
@@ -769,25 +768,25 @@ public class LexiconInteractor extends InteractorImpl {
         try {
             addPersonalEntry(user, LexiconMatchType.PARAMETER, MiraiCodeUtility.contentToString(key), reply);
         } catch (Exception exception) {
-            user.sendError("正则表达式「{key}」有错误：" + exception + "，请仔细核对。");
+            user.sendError("正则表达式「" + key + "」有错误：" + exception + "，请仔细核对。");
         }
     }
 
     @NonNext
-    @Filter(CommandWords.ADD + CommandWords.PERSONAL + CONTAIN + ENTRY + " {key} {remain}")
-    @Filter(CommandWords.NEW + CommandWords.PERSONAL + CONTAIN + ENTRY + " {key} {remain}")
-    @Filter(CommandWords.ADD + CommandWords.PERSONAL + CONTAIN + EQUAL + ENTRY + " {key} {remain}")
-    @Filter(CommandWords.NEW + CommandWords.PERSONAL + CONTAIN + EQUAL + ENTRY + " {key} {remain}")
+    @Filter(CommandWords.ADD + CommandWords.PERSONAL + CONTAIN + ENTRY + " {触发词} {r:回复}")
+    @Filter(CommandWords.NEW + CommandWords.PERSONAL + CONTAIN + ENTRY + " {触发词} {r:回复}")
+    @Filter(CommandWords.ADD + CommandWords.PERSONAL + CONTAIN + EQUAL + ENTRY + " {触发词} {r:回复}")
+    @Filter(CommandWords.NEW + CommandWords.PERSONAL + CONTAIN + EQUAL + ENTRY + " {触发词} {r:回复}")
     @Permission("lexicons.personal.add")
-    public void onAddPersonalContainEqualEntry(XiaomingUser user, @FilterParameter("key") String key, @FilterParameter("remain") String reply) {
+    public void onAddPersonalContainEqualEntry(XiaomingUser user, @FilterParameter("触发词") String key, @FilterParameter("回复") String reply) {
         addPersonalEntry(user, LexiconMatchType.CONTAIN_EQUAL, key, reply);
     }
 
     @NonNext
-    @Filter(CommandWords.ADD + CommandWords.PERSONAL + CONTAIN + MATCH + ENTRY + " {key} {remain}")
-    @Filter(CommandWords.NEW + CommandWords.PERSONAL + CONTAIN + MATCH + ENTRY + " {key} {remain}")
+    @Filter(CommandWords.ADD + CommandWords.PERSONAL + CONTAIN + MATCH + ENTRY + " {触发词} {r:回复}")
+    @Filter(CommandWords.NEW + CommandWords.PERSONAL + CONTAIN + MATCH + ENTRY + " {触发词} {r:回复}")
     @Permission("lexicons.personal.add")
-    public void onAddPersonalContainMatchEntry(XiaomingUser user, @FilterParameter("key") String key, @FilterParameter("remain") String reply) {
+    public void onAddPersonalContainMatchEntry(XiaomingUser user, @FilterParameter("触发词") String key, @FilterParameter("回复") String reply) {
         if (!MiraiCodeUtility.getImages(key).isEmpty()) {
             user.sendError("有关正则表达式的匹配规则中不能包含图片");
             return;
@@ -795,14 +794,14 @@ public class LexiconInteractor extends InteractorImpl {
         try {
             addPersonalEntry(user, LexiconMatchType.CONTAIN_MATCH, key, reply);
         } catch (Exception exception) {
-            user.sendError("正则表达式「{key}」有错误：" + exception + "，请仔细核对。");
+            user.sendError("正则表达式「" + key + "」有错误：" + exception + "，请仔细核对。");
         }
     }
 
     @NonNext
-    @Filter(CommandWords.PERSONAL + ENTRY + " {personalEntry}")
+    @Filter(CommandWords.PERSONAL + ENTRY + " {私人词条}")
     @Permission("lexicons.personal.look")
-    public void onLookPersonalEntry(XiaomingUser user, @FilterParameter("personalEntry") LexiconEntry entry) {
+    public void onLookPersonalEntry(XiaomingUser user, @FilterParameter("私人词条") LexiconEntry entry) {
         user.sendMessage("【私人词条详情】：\n" + entry);
     }
 
@@ -821,91 +820,91 @@ public class LexiconInteractor extends InteractorImpl {
     }
 
     @NonNext
-    @Filter(CommandWords.REMOVE + CommandWords.PERSONAL + ENTRY + " {personalEntry}")
+    @Filter(CommandWords.REMOVE + CommandWords.PERSONAL + ENTRY + " {私人词条}")
     @Permission("lexicons.personal.remove")
-    public void onRemovePersonalEntry(XiaomingUser user, @FilterParameter("personalEntry") LexiconEntry entry, @FilterParameter("personalEntry") String key) {
+    public void onRemovePersonalEntry(XiaomingUser user, @FilterParameter("私人词条") LexiconEntry entry, @FilterParameter("私人词条") String key) {
         removePersonalEntry(user, entry, key);
     }
 
     @NonNext
-    @Filter(CommandWords.REMOVE + CommandWords.PERSONAL + ENTRY + RULE + " {personalEntry}")
+    @Filter(CommandWords.REMOVE + CommandWords.PERSONAL + ENTRY + RULE + " {私人词条}")
     @Permission("lexicons.personal.remove")
-    public void onRemovePersonalEntryRule(XiaomingUser user, @FilterParameter("personalEntry") LexiconEntry entry) {
+    public void onRemovePersonalEntryRule(XiaomingUser user, @FilterParameter("私人词条") LexiconEntry entry) {
         removePersonalEntryRule(user, entry);
     }
 
     @NonNext
-    @Filter(CommandWords.REMOVE + CommandWords.PERSONAL + ENTRY + REPLY + " {personalEntry} {remain}")
+    @Filter(CommandWords.REMOVE + CommandWords.PERSONAL + ENTRY + REPLY + " {私人词条} {r:回复}")
     @Permission("lexicons.personal.remove")
-    public void onRemovePersonalEntryReply(XiaomingUser user, @FilterParameter("personalEntry") LexiconEntry entry, @FilterParameter("personalEntry") String key, @FilterParameter("remain") String reply) {
+    public void onRemovePersonalEntryReply(XiaomingUser user, @FilterParameter("私人词条") LexiconEntry entry, @FilterParameter("私人词条") String key, @FilterParameter("回复") String reply) {
         removePersonalEntryReply(user, entry, key, reply);
     }
 
     @NonNext
-    @Filter(CommandWords.REMOVE + CommandWords.PERSONAL + ENTRY + REPLY + " {personalEntry}")
+    @Filter(CommandWords.REMOVE + CommandWords.PERSONAL + ENTRY + REPLY + " {私人词条}")
     @Permission("lexicons.personal.remove")
-    public void onRemovePersonalEntryReplyIndex(XiaomingUser user, @FilterParameter("personalEntry") LexiconEntry entry, @FilterParameter("personalEntry") String key) {
+    public void onRemovePersonalEntryReplyIndex(XiaomingUser user, @FilterParameter("私人词条") LexiconEntry entry, @FilterParameter("私人词条") String key) {
         removePersonalEntryReplyIndex(user, entry, key);
     }
 
     @NonNext
-    @Filter(CommandWords.ADD + CommandWords.PERSONAL + ENTRY + REPLY + " {key} {remain}")
-    @Filter(CommandWords.NEW + CommandWords.PERSONAL + ENTRY + REPLY + " {key} {remain}")
+    @Filter(CommandWords.ADD + CommandWords.PERSONAL + ENTRY + REPLY + " {触发词} {r:回复}")
+    @Filter(CommandWords.NEW + CommandWords.PERSONAL + ENTRY + REPLY + " {触发词} {r:回复}")
     @Permission("lexicons.personal.add")
-    public void onAddPersonalEntryReply(XiaomingUser user, @FilterParameter("key") String key, @FilterParameter("remain") String reply) {
+    public void onAddPersonalEntryReply(XiaomingUser user, @FilterParameter("触发词") String key, @FilterParameter("回复") String reply) {
         addPersonalEntryReply(user, key, reply);
     }
 
     @NonNext
-    @Filter(BATCH + CommandWords.ADD + CommandWords.PERSONAL + ENTRY + REPLY + " {key}")
-    @Filter(BATCH + CommandWords.NEW + CommandWords.PERSONAL + ENTRY + REPLY + " {key}")
+    @Filter(BATCH + CommandWords.ADD + CommandWords.PERSONAL + ENTRY + REPLY + " {触发词}")
+    @Filter(BATCH + CommandWords.NEW + CommandWords.PERSONAL + ENTRY + REPLY + " {触发词}")
     @Permission("lexicons.personal.add")
-    public void onAddPersonalEntryReplyOneByOne(XiaomingUser user, @FilterParameter("key") String key) {
+    public void onAddPersonalEntryReplyOneByOne(XiaomingUser user, @FilterParameter("触发词") String key) {
         addPersonalEntryReplyOneByOne(user, key);
     }
 
     @NonNext
-    @Filter(CommandWords.ADD + CommandWords.GROUP + ENTRY + IMAGE + REPLY + " {groupTag} {groupEntry} {remain}")
-    @Filter(CommandWords.NEW + CommandWords.GROUP + ENTRY + IMAGE + REPLY + " {groupTag} {groupEntry} {remain}")
-    @Permission("lexicons.group.{groupTag}.add")
+    @Filter(CommandWords.ADD + CommandWords.GROUP + ENTRY + IMAGE + REPLY + " {群标签} {群词条} {r:回复}")
+    @Filter(CommandWords.NEW + CommandWords.GROUP + ENTRY + IMAGE + REPLY + " {群标签} {群词条} {r:回复}")
+    @Permission("lexicons.group.{args.群标签}.add")
     public void onAddGroupEntryImageReply(XiaomingUser user,
-                                             @FilterParameter("groupEntry") String key,
-                                             @FilterParameter("groupEntry") LexiconEntry entry,
-                                             @FilterParameter("remain") String reply) {
+                                             @FilterParameter("群词条") String key,
+                                             @FilterParameter("群词条") LexiconEntry entry,
+                                             @FilterParameter("回复") String reply) {
         addGroupEntryImageReply(user, entry, key, reply);
     }
 
     @NonNext
-    @Filter(CommandWords.ADD + CommandWords.GROUP + ENTRY + " {groupTag} {key} {remain}")
-    @Filter(CommandWords.NEW + CommandWords.GROUP + ENTRY + " {groupTag} {key} {remain}")
-    @Filter(CommandWords.ADD + CommandWords.GROUP + EQUAL + ENTRY + " {groupTag} {key} {remain}")
-    @Filter(CommandWords.NEW + CommandWords.GROUP + EQUAL + ENTRY + " {groupTag} {key} {remain}")
-    @Permission("lexicons.group.{groupTag}.add")
-    public void onAddGroupEqualEntry(XiaomingUser user, @FilterParameter("key") String key, @FilterParameter("groupTag") String groupTag, @FilterParameter("remain") String reply) {
+    @Filter(CommandWords.ADD + CommandWords.GROUP + ENTRY + " {群标签} {触发词} {r:回复}")
+    @Filter(CommandWords.NEW + CommandWords.GROUP + ENTRY + " {群标签} {触发词} {r:回复}")
+    @Filter(CommandWords.ADD + CommandWords.GROUP + EQUAL + ENTRY + " {群标签} {触发词} {r:回复}")
+    @Filter(CommandWords.NEW + CommandWords.GROUP + EQUAL + ENTRY + " {群标签} {触发词} {r:回复}")
+    @Permission("lexicons.group.{args.群标签}.add")
+    public void onAddGroupEqualEntry(XiaomingUser user, @FilterParameter("触发词") String key, @FilterParameter("群标签") String groupTag, @FilterParameter("回复") String reply) {
         addGroupEntry(user, groupTag, LexiconMatchType.EQUAL, key, reply);
     }
 
     @NonNext
-    @Filter(CommandWords.ADD + CommandWords.GROUP + START + EQUAL + ENTRY + " {groupTag} {key} {remain}")
-    @Filter(CommandWords.NEW + CommandWords.GROUP + START + EQUAL + ENTRY + " {groupTag} {key} {remain}")
-    @Permission("lexicons.group.{groupTag}.add")
-    public void onAddGroupStartEqualEntry(XiaomingUser user, @FilterParameter("key") String key, @FilterParameter("groupTag") String groupTag, @FilterParameter("remain") String reply) {
+    @Filter(CommandWords.ADD + CommandWords.GROUP + START + EQUAL + ENTRY + " {群标签} {触发词} {r:回复}")
+    @Filter(CommandWords.NEW + CommandWords.GROUP + START + EQUAL + ENTRY + " {群标签} {触发词} {r:回复}")
+    @Permission("lexicons.group.{args.群标签}.add")
+    public void onAddGroupStartEqualEntry(XiaomingUser user, @FilterParameter("触发词") String key, @FilterParameter("群标签") String groupTag, @FilterParameter("回复") String reply) {
         addGroupEntry(user, groupTag, LexiconMatchType.START_EQUAL, key, reply);
     }
 
     @NonNext
-    @Filter(CommandWords.ADD + CommandWords.GROUP + END + EQUAL + ENTRY + " {groupTag} {key} {remain}")
-    @Filter(CommandWords.NEW + CommandWords.GROUP + END + EQUAL + ENTRY + " {groupTag} {key} {remain}")
-    @Permission("lexicons.group.{groupTag}.add")
-    public void onAddGroupEndEqualEntry(XiaomingUser user, @FilterParameter("key") String key, @FilterParameter("groupTag") String groupTag, @FilterParameter("remain") String reply) {
+    @Filter(CommandWords.ADD + CommandWords.GROUP + END + EQUAL + ENTRY + " {群标签} {触发词} {r:回复}")
+    @Filter(CommandWords.NEW + CommandWords.GROUP + END + EQUAL + ENTRY + " {群标签} {触发词} {r:回复}")
+    @Permission("lexicons.group.{args.群标签}.add")
+    public void onAddGroupEndEqualEntry(XiaomingUser user, @FilterParameter("触发词") String key, @FilterParameter("群标签") String groupTag, @FilterParameter("回复") String reply) {
         addGroupEntry(user, groupTag, LexiconMatchType.END_EQUAL, key, reply);
     }
 
     @NonNext
-    @Filter(CommandWords.ADD + CommandWords.GROUP + MATCH + ENTRY + " {groupTag} {key} {remain}")
-    @Filter(CommandWords.NEW + CommandWords.GROUP + MATCH + ENTRY + " {groupTag} {key} {remain}")
-    @Permission("lexicons.group.{groupTag}.add")
-    public void onAddGroupMatchEntry(XiaomingUser user, @FilterParameter("key") String key, @FilterParameter("groupTag") String groupTag, @FilterParameter("remain") String reply) {
+    @Filter(CommandWords.ADD + CommandWords.GROUP + MATCH + ENTRY + " {群标签} {触发词} {r:回复}")
+    @Filter(CommandWords.NEW + CommandWords.GROUP + MATCH + ENTRY + " {群标签} {触发词} {r:回复}")
+    @Permission("lexicons.group.{args.群标签}.add")
+    public void onAddGroupMatchEntry(XiaomingUser user, @FilterParameter("触发词") String key, @FilterParameter("群标签") String groupTag, @FilterParameter("回复") String reply) {
         if (!MiraiCodeUtility.getImages(key).isEmpty()) {
             user.sendError("有关正则表达式的匹配规则中不能包含图片");
             return;
@@ -913,15 +912,15 @@ public class LexiconInteractor extends InteractorImpl {
         try {
             addGroupEntry(user, groupTag, LexiconMatchType.MATCH, MiraiCodeUtility.contentToString(key), reply);
         } catch (Exception exception) {
-            user.sendError("正则表达式「{key}」有错误：" + exception + "，请仔细核对。");
+            user.sendError("正则表达式「" + key + "」有错误：" + exception + "，请仔细核对。");
         }
     }
 
     @NonNext
-    @Filter(CommandWords.ADD + CommandWords.GROUP + START + MATCH + ENTRY + " {groupTag} {key} {remain}")
-    @Filter(CommandWords.NEW + CommandWords.GROUP + START + MATCH + ENTRY + " {groupTag} {key} {remain}")
-    @Permission("lexicons.group.{groupTag}.add")
-    public void onAddGroupStartMatchEntry(XiaomingUser user, @FilterParameter("key") String key, @FilterParameter("groupTag") String groupTag, @FilterParameter("remain") String reply) {
+    @Filter(CommandWords.ADD + CommandWords.GROUP + START + MATCH + ENTRY + " {群标签} {触发词} {r:回复}")
+    @Filter(CommandWords.NEW + CommandWords.GROUP + START + MATCH + ENTRY + " {群标签} {触发词} {r:回复}")
+    @Permission("lexicons.group.{args.群标签}.add")
+    public void onAddGroupStartMatchEntry(XiaomingUser user, @FilterParameter("触发词") String key, @FilterParameter("群标签") String groupTag, @FilterParameter("回复") String reply) {
         if (!MiraiCodeUtility.getImages(key).isEmpty()) {
             user.sendError("有关正则表达式的匹配规则中不能包含图片");
             return;
@@ -929,15 +928,15 @@ public class LexiconInteractor extends InteractorImpl {
         try {
             addGroupEntry(user, groupTag, LexiconMatchType.START_MATCH, MiraiCodeUtility.contentToString(key), reply);
         } catch (Exception exception) {
-            user.sendError("正则表达式「{key}」有错误：" + exception + "，请仔细核对。");
+            user.sendError("正则表达式「" + key + "」有错误：" + exception + "，请仔细核对。");
         }
     }
 
     @NonNext
-    @Filter(CommandWords.ADD + CommandWords.GROUP + END + MATCH + ENTRY + " {groupTag} {key} {remain}")
-    @Filter(CommandWords.NEW + CommandWords.GROUP + END + MATCH + ENTRY + " {groupTag} {key} {remain}")
-    @Permission("lexicons.group.{groupTag}.add")
-    public void onAddGroupEndMatchEntry(XiaomingUser user, @FilterParameter("key") String key, @FilterParameter("groupTag") String groupTag, @FilterParameter("remain") String reply) {
+    @Filter(CommandWords.ADD + CommandWords.GROUP + END + MATCH + ENTRY + " {群标签} {触发词} {r:回复}")
+    @Filter(CommandWords.NEW + CommandWords.GROUP + END + MATCH + ENTRY + " {群标签} {触发词} {r:回复}")
+    @Permission("lexicons.group.{args.群标签}.add")
+    public void onAddGroupEndMatchEntry(XiaomingUser user, @FilterParameter("触发词") String key, @FilterParameter("群标签") String groupTag, @FilterParameter("回复") String reply) {
         if (!MiraiCodeUtility.getImages(key).isEmpty()) {
             user.sendError("有关正则表达式的匹配规则中不能包含图片");
             return;
@@ -945,15 +944,15 @@ public class LexiconInteractor extends InteractorImpl {
         try {
             addGroupEntry(user, groupTag, LexiconMatchType.END_MATCH, MiraiCodeUtility.contentToString(key), reply);
         } catch (Exception exception) {
-            user.sendError("正则表达式「{key}」有错误：" + exception + "，请仔细核对。");
+            user.sendError("正则表达式「" + key + "」有错误：" + exception + "，请仔细核对。");
         }
     }
 
     @NonNext
-    @Filter(CommandWords.ADD + CommandWords.GROUP + PARAMETER + ENTRY + " {groupTag} {key} {remain}")
-    @Filter(CommandWords.NEW + CommandWords.GROUP + PARAMETER + ENTRY + " {groupTag} {key} {remain}")
-    @Permission("lexicons.group.{groupTag}.add")
-    public void onAddGroupParameterEntry(XiaomingUser user, @FilterParameter("key") String key, @FilterParameter("groupTag") String groupTag, @FilterParameter("remain") String reply) {
+    @Filter(CommandWords.ADD + CommandWords.GROUP + PARAMETER + ENTRY + " {群标签} {触发词} {r:回复}")
+    @Filter(CommandWords.NEW + CommandWords.GROUP + PARAMETER + ENTRY + " {群标签} {触发词} {r:回复}")
+    @Permission("lexicons.group.{args.群标签}.add")
+    public void onAddGroupParameterEntry(XiaomingUser user, @FilterParameter("触发词") String key, @FilterParameter("群标签") String groupTag, @FilterParameter("回复") String reply) {
         if (!MiraiCodeUtility.getImages(key).isEmpty()) {
             user.sendError("有关参数的匹配规则中不能包含图片");
             return;
@@ -961,25 +960,25 @@ public class LexiconInteractor extends InteractorImpl {
         try {
             addGroupEntry(user, groupTag, LexiconMatchType.PARAMETER, MiraiCodeUtility.contentToString(key), reply);
         } catch (Exception exception) {
-            user.sendError("正则表达式「{key}」有错误：" + exception + "，请仔细核对。");
+            user.sendError("正则表达式「" + key + "」有错误：" + exception + "，请仔细核对。");
         }
     }
 
     @NonNext
-    @Filter(CommandWords.ADD + CommandWords.GROUP + CONTAIN + ENTRY + " {groupTag} {key} {remain}")
-    @Filter(CommandWords.NEW + CommandWords.GROUP + CONTAIN + ENTRY + " {groupTag} {key} {remain}")
-    @Filter(CommandWords.ADD + CommandWords.GROUP + CONTAIN + EQUAL + ENTRY + " {groupTag} {key} {remain}")
-    @Filter(CommandWords.NEW + CommandWords.GROUP + CONTAIN + EQUAL + ENTRY + " {groupTag} {key} {remain}")
-    @Permission("lexicons.group.{groupTag}.add")
-    public void onAddGroupContainEqualEntry(XiaomingUser user, @FilterParameter("key") String key, @FilterParameter("groupTag") String groupTag, @FilterParameter("remain") String reply) {
+    @Filter(CommandWords.ADD + CommandWords.GROUP + CONTAIN + ENTRY + " {群标签} {触发词} {r:回复}")
+    @Filter(CommandWords.NEW + CommandWords.GROUP + CONTAIN + ENTRY + " {群标签} {触发词} {r:回复}")
+    @Filter(CommandWords.ADD + CommandWords.GROUP + CONTAIN + EQUAL + ENTRY + " {群标签} {触发词} {r:回复}")
+    @Filter(CommandWords.NEW + CommandWords.GROUP + CONTAIN + EQUAL + ENTRY + " {群标签} {触发词} {r:回复}")
+    @Permission("lexicons.group.{args.群标签}.add")
+    public void onAddGroupContainEqualEntry(XiaomingUser user, @FilterParameter("触发词") String key, @FilterParameter("群标签") String groupTag, @FilterParameter("回复") String reply) {
         addGroupEntry(user, groupTag, LexiconMatchType.CONTAIN_EQUAL, key, reply);
     }
 
     @NonNext
-    @Filter(CommandWords.ADD + CommandWords.GROUP + CONTAIN + MATCH + ENTRY + " {groupTag} {key} {remain}")
-    @Filter(CommandWords.NEW + CommandWords.GROUP + CONTAIN + MATCH + ENTRY + " {groupTag} {key} {remain}")
-    @Permission("lexicons.group.{groupTag}.add")
-    public void onAddGroupContainMatchEntry(XiaomingUser user, @FilterParameter("key") String key, @FilterParameter("groupTag") String groupTag, @FilterParameter("remain") String reply) {
+    @Filter(CommandWords.ADD + CommandWords.GROUP + CONTAIN + MATCH + ENTRY + " {群标签} {触发词} {r:回复}")
+    @Filter(CommandWords.NEW + CommandWords.GROUP + CONTAIN + MATCH + ENTRY + " {群标签} {触发词} {r:回复}")
+    @Permission("lexicons.group.{args.群标签}.add")
+    public void onAddGroupContainMatchEntry(XiaomingUser user, @FilterParameter("触发词") String key, @FilterParameter("群标签") String groupTag, @FilterParameter("回复") String reply) {
         if (!MiraiCodeUtility.getImages(key).isEmpty()) {
             user.sendError("有关正则表达式的匹配规则中不能包含图片");
             return;
@@ -987,22 +986,22 @@ public class LexiconInteractor extends InteractorImpl {
         try {
             addGroupEntry(user, groupTag, LexiconMatchType.CONTAIN_MATCH, key, reply);
         } catch (Exception exception) {
-            user.sendError("正则表达式「{key}」有错误：" + exception + "，请仔细核对。");
+            user.sendError("正则表达式「" + key + "」有错误：" + exception + "，请仔细核对。");
         }
     }
 
     @NonNext
-    @Filter(CommandWords.GROUP + ENTRY + " {groupTag} {groupEntry}")
-    @Permission("lexicons.group.{groupTag}.look")
-    public void onLookGroupEntry(XiaomingUser user, @FilterParameter("groupTag") String groupTag, @FilterParameter("groupEntry") LexiconEntry entry) {
+    @Filter(CommandWords.GROUP + ENTRY + " {群标签} {群词条}")
+    @Permission("lexicons.group.{args.群标签}.look")
+    public void onLookGroupEntry(XiaomingUser user, @FilterParameter("群标签") String groupTag, @FilterParameter("群词条") LexiconEntry entry) {
         user.sendMessage("【群聊词条详情】：\n" + entry);
     }
 
     @NonNext
-    @Filter(CommandWords.GROUP + ENTRY + " {groupTag}")
-    @Filter(CommandWords.GROUP + LEXICON + " {groupTag}")
-    @Permission("lexicons.group.{groupTag}.list")
-    public void onListGroupEntry(XiaomingUser user, @FilterParameter("groupTag") String groupTag) {
+    @Filter(CommandWords.GROUP + ENTRY + " {群标签}")
+    @Filter(CommandWords.GROUP + LEXICON + " {群标签}")
+    @Permission("lexicons.group.{args.群标签}.list")
+    public void onListGroupEntry(XiaomingUser user, @FilterParameter("群标签") String groupTag) {
         final Set<LexiconEntry> groupEntries = manager.forGroupEntries(groupTag);
         if (CollectionUtility.isEmpty(groupEntries)) {
             user.sendWarning("没有任何群聊词条");
@@ -1013,99 +1012,102 @@ public class LexiconInteractor extends InteractorImpl {
     }
 
     @NonNext
-    @Filter(CommandWords.REMOVE + CommandWords.GROUP + ENTRY + " {groupTag} {groupEntry}")
-    @Permission("lexicons.group.{groupTag}.remove")
-    public void onRemoveGroupEntry(XiaomingUser user, @FilterParameter("groupTag") String groupTag, @FilterParameter("groupEntry") LexiconEntry entry, @FilterParameter("groupEntry") String key) {
+    @Filter(CommandWords.REMOVE + CommandWords.GROUP + ENTRY + " {群标签} {群词条}")
+    @Permission("lexicons.group.{args.群标签}.remove")
+    public void onRemoveGroupEntry(XiaomingUser user,
+                                   @FilterParameter("群标签") String groupTag,
+                                   @FilterParameter("群词条") LexiconEntry entry,
+                                   @FilterParameter("群词条") String key) {
         removeGroupEntry(user, groupTag, entry, key);
     }
 
     @NonNext
-    @Filter(CommandWords.REMOVE + CommandWords.GROUP + ENTRY + RULE + " {groupTag} {groupEntry}")
-    @Permission("lexicons.group.{groupTag}.remove")
-    public void onRemoveGroupEntryRule(XiaomingUser user, @FilterParameter("groupTag") String groupTag, @FilterParameter("groupEntry") LexiconEntry entry) {
+    @Filter(CommandWords.REMOVE + CommandWords.GROUP + ENTRY + RULE + " {群标签} {群词条}")
+    @Permission("lexicons.group.{args.群标签}.remove")
+    public void onRemoveGroupEntryRule(XiaomingUser user, @FilterParameter("群标签") String groupTag, @FilterParameter("群词条") LexiconEntry entry) {
         removeGroupEntryRule(user, groupTag, entry);
     }
 
     @NonNext
-    @Filter(CommandWords.REMOVE + CommandWords.GROUP + ENTRY + REPLY + " {groupTag} {groupEntry} {remain}")
-    @Permission("lexicons.group.{groupTag}.remove")
-    public void onRemoveGroupEntryReply(XiaomingUser user, @FilterParameter("groupEntry") LexiconEntry entry, @FilterParameter("groupEntry") String key, @FilterParameter("groupTag") String groupTag, @FilterParameter("remain") String reply) {
+    @Filter(CommandWords.REMOVE + CommandWords.GROUP + ENTRY + REPLY + " {群标签} {群词条} {r:回复}")
+    @Permission("lexicons.group.{args.群标签}.remove")
+    public void onRemoveGroupEntryReply(XiaomingUser user, @FilterParameter("群词条") LexiconEntry entry, @FilterParameter("群词条") String key, @FilterParameter("群标签") String groupTag, @FilterParameter("回复") String reply) {
         removeGroupEntryReply(user, groupTag, entry, key, reply);
     }
 
     @NonNext
-    @Filter(CommandWords.REMOVE + CommandWords.GROUP + ENTRY + REPLY + " {groupTag} {groupEntry}")
-    @Permission("lexicons.group.{groupTag}.remove")
-    public void onRemoveGroupEntryReplyIndex(XiaomingUser user, @FilterParameter("groupEntry") LexiconEntry entry, @FilterParameter("groupTag") String groupTag, @FilterParameter("groupEntry") String key) {
+    @Filter(CommandWords.REMOVE + CommandWords.GROUP + ENTRY + REPLY + " {群标签} {群词条}")
+    @Permission("lexicons.group.{args.群标签}.remove")
+    public void onRemoveGroupEntryReplyIndex(XiaomingUser user, @FilterParameter("群词条") LexiconEntry entry, @FilterParameter("群标签") String groupTag, @FilterParameter("群词条") String key) {
         removeGroupEntryReplyIndex(user, groupTag, entry, key);
     }
 
     @NonNext
-    @Filter(CommandWords.ADD + CommandWords.GROUP + ENTRY + REPLY + " {groupTag} {key} {remain}")
-    @Filter(CommandWords.NEW + CommandWords.GROUP + ENTRY + REPLY + " {groupTag} {key} {remain}")
-    @Permission("lexicons.group.{groupTag}.add")
-    public void onAddGroupEntryReply(XiaomingUser user, @FilterParameter("key") String key, @FilterParameter("groupTag") String groupTag, @FilterParameter("remain") String reply) {
+    @Filter(CommandWords.ADD + CommandWords.GROUP + ENTRY + REPLY + " {群标签} {触发词} {r:回复}")
+    @Filter(CommandWords.NEW + CommandWords.GROUP + ENTRY + REPLY + " {群标签} {触发词} {r:回复}")
+    @Permission("lexicons.group.{args.群标签}.add")
+    public void onAddGroupEntryReply(XiaomingUser user, @FilterParameter("触发词") String key, @FilterParameter("群标签") String groupTag, @FilterParameter("回复") String reply) {
         addGroupEntryReply(user, groupTag, key, reply);
     }
 
     @NonNext
-    @Filter(BATCH + CommandWords.ADD + CommandWords.GROUP + ENTRY + REPLY + " {groupTag} {key}")
-    @Filter(BATCH + CommandWords.NEW + CommandWords.GROUP + ENTRY + REPLY + " {groupTag} {key}")
-    @Permission("lexicons.group.{groupTag}.add")
-    public void onAddGroupEntryReply(XiaomingUser user, @FilterParameter("key") String key, @FilterParameter("groupTag") String groupTag) {
+    @Filter(BATCH + CommandWords.ADD + CommandWords.GROUP + ENTRY + REPLY + " {群标签} {触发词}")
+    @Filter(BATCH + CommandWords.NEW + CommandWords.GROUP + ENTRY + REPLY + " {群标签} {触发词}")
+    @Permission("lexicons.group.{args.群标签}.add")
+    public void onAddGroupEntryReply(XiaomingUser user, @FilterParameter("触发词") String key, @FilterParameter("群标签") String groupTag) {
         addGroupEntryReplyOneByOne(user, groupTag, key);
     }
 
     @NonNext
-    @Filter(CommandWords.ADD + CommandWords.THIS + CommandWords.GROUP + ENTRY + IMAGE + REPLY + " {groupEntry} {remain}")
-    @Filter(CommandWords.NEW + CommandWords.THIS + CommandWords.GROUP + ENTRY + IMAGE + REPLY + " {groupEntry} {remain}")
-    @Permission("lexicons.group.{group}.add")
+    @Filter(CommandWords.ADD + CommandWords.THIS + CommandWords.GROUP + ENTRY + IMAGE + REPLY + " {群词条} {r:回复}")
+    @Filter(CommandWords.NEW + CommandWords.THIS + CommandWords.GROUP + ENTRY + IMAGE + REPLY + " {群词条} {r:回复}")
+    @Permission("lexicons.group.{user.groupCode}.add")
     public void onAddGroupEntryImageReply(GroupXiaomingUser user,
-                                          @FilterParameter("groupEntry") String key,
-                                          @FilterParameter("groupEntry") LexiconEntry entry,
-                                          @FilterParameter("remain") String reply) {
+                                          @FilterParameter("群词条") String key,
+                                          @FilterParameter("群词条") LexiconEntry entry,
+                                          @FilterParameter("回复") String reply) {
         addGroupEntryImageReply(user, entry, key, reply);
     }
 
     @NonNext
-    @Filter(CommandWords.ADD + CommandWords.THIS + CommandWords.GROUP + ENTRY + " {key} {remain}")
-    @Filter(CommandWords.NEW + CommandWords.THIS + CommandWords.GROUP + ENTRY + " {key} {remain}")
-    @Filter(CommandWords.ADD + CommandWords.THIS + CommandWords.GROUP + EQUAL + ENTRY + " {key} {remain}")
-    @Filter(CommandWords.NEW + CommandWords.THIS + CommandWords.GROUP + EQUAL + ENTRY + " {key} {remain}")
-    @Permission("lexicons.group.{group}.add")
-    public void onAddThisGroupEqualEntry(GroupXiaomingUser user, @FilterParameter("key") String key, @FilterParameter("remain") String reply) {
+    @Filter(CommandWords.ADD + CommandWords.THIS + CommandWords.GROUP + ENTRY + " {触发词} {r:回复}")
+    @Filter(CommandWords.NEW + CommandWords.THIS + CommandWords.GROUP + ENTRY + " {触发词} {r:回复}")
+    @Filter(CommandWords.ADD + CommandWords.THIS + CommandWords.GROUP + EQUAL + ENTRY + " {触发词} {r:回复}")
+    @Filter(CommandWords.NEW + CommandWords.THIS + CommandWords.GROUP + EQUAL + ENTRY + " {触发词} {r:回复}")
+    @Permission("lexicons.group.{user.groupCode}.add")
+    public void onAddThisGroupEqualEntry(GroupXiaomingUser user, @FilterParameter("触发词") String key, @FilterParameter("回复") String reply) {
         addGroupEntry(user, user.getGroupCodeString(), LexiconMatchType.EQUAL, key, reply);
     }
 
     @NonNext
-    @Filter(CommandWords.ADD + CommandWords.THIS + CommandWords.GROUP + IGNORE_CASE + ENTRY + " {key} {remain}")
-    @Filter(CommandWords.NEW + CommandWords.THIS + CommandWords.GROUP + IGNORE_CASE + ENTRY + " {key} {remain}")
-    @Permission("lexicons.group.{group}.add")
-    public void onAddThisGroupEqualIgnoreCaseEntry(GroupXiaomingUser user, @FilterParameter("key") String key, @FilterParameter("remain") String reply) {
+    @Filter(CommandWords.ADD + CommandWords.THIS + CommandWords.GROUP + IGNORE_CASE + ENTRY + " {触发词} {r:回复}")
+    @Filter(CommandWords.NEW + CommandWords.THIS + CommandWords.GROUP + IGNORE_CASE + ENTRY + " {触发词} {r:回复}")
+    @Permission("lexicons.group.{user.groupCode}.add")
+    public void onAddThisGroupEqualIgnoreCaseEntry(GroupXiaomingUser user, @FilterParameter("触发词") String key, @FilterParameter("回复") String reply) {
         addGroupEntry(user, user.getGroupCodeString(), LexiconMatchType.EQUAL_IGNORE_CASE, key, reply);
     }
 
     @NonNext
-    @Filter(CommandWords.ADD + CommandWords.THIS + CommandWords.GROUP + START + EQUAL + ENTRY + " {key} {remain}")
-    @Filter(CommandWords.NEW + CommandWords.THIS + CommandWords.GROUP + START + EQUAL + ENTRY + " {key} {remain}")
-    @Permission("lexicons.group.{group}.add")
-    public void onAddThisGroupStartEqualEntry(GroupXiaomingUser user, @FilterParameter("key") String key, @FilterParameter("remain") String reply) {
+    @Filter(CommandWords.ADD + CommandWords.THIS + CommandWords.GROUP + START + EQUAL + ENTRY + " {触发词} {r:回复}")
+    @Filter(CommandWords.NEW + CommandWords.THIS + CommandWords.GROUP + START + EQUAL + ENTRY + " {触发词} {r:回复}")
+    @Permission("lexicons.group.{user.groupCode}.add")
+    public void onAddThisGroupStartEqualEntry(GroupXiaomingUser user, @FilterParameter("触发词") String key, @FilterParameter("回复") String reply) {
         addGroupEntry(user, user.getGroupCodeString(), LexiconMatchType.START_EQUAL, key, reply);
     }
 
     @NonNext
-    @Filter(CommandWords.ADD + CommandWords.THIS + CommandWords.GROUP + END + EQUAL + ENTRY + " {key} {remain}")
-    @Filter(CommandWords.NEW + CommandWords.THIS + CommandWords.GROUP + END + EQUAL + ENTRY + " {key} {remain}")
-    @Permission("lexicons.group.{group}.add")
-    public void onAddThisGroupEndEqualEntry(GroupXiaomingUser user, @FilterParameter("key") String key, @FilterParameter("remain") String reply) {
+    @Filter(CommandWords.ADD + CommandWords.THIS + CommandWords.GROUP + END + EQUAL + ENTRY + " {触发词} {r:回复}")
+    @Filter(CommandWords.NEW + CommandWords.THIS + CommandWords.GROUP + END + EQUAL + ENTRY + " {触发词} {r:回复}")
+    @Permission("lexicons.group.{user.groupCode}.add")
+    public void onAddThisGroupEndEqualEntry(GroupXiaomingUser user, @FilterParameter("触发词") String key, @FilterParameter("回复") String reply) {
         addGroupEntry(user, user.getGroupCodeString(), LexiconMatchType.END_EQUAL, key, reply);
     }
 
     @NonNext
-    @Filter(CommandWords.ADD + CommandWords.THIS + CommandWords.GROUP + MATCH + ENTRY + " {key} {remain}")
-    @Filter(CommandWords.NEW + CommandWords.THIS + CommandWords.GROUP + MATCH + ENTRY + " {key} {remain}")
-    @Permission("lexicons.group.{group}.add")
-    public void onAddThisGroupMatchEntry(GroupXiaomingUser user, @FilterParameter("key") String key, @FilterParameter("remain") String reply) {
+    @Filter(CommandWords.ADD + CommandWords.THIS + CommandWords.GROUP + MATCH + ENTRY + " {触发词} {r:回复}")
+    @Filter(CommandWords.NEW + CommandWords.THIS + CommandWords.GROUP + MATCH + ENTRY + " {触发词} {r:回复}")
+    @Permission("lexicons.group.{user.groupCode}.add")
+    public void onAddThisGroupMatchEntry(GroupXiaomingUser user, @FilterParameter("触发词") String key, @FilterParameter("回复") String reply) {
         if (!MiraiCodeUtility.getImages(key).isEmpty()) {
             user.sendError("有关正则表达式的匹配规则中不能包含图片");
             return;
@@ -1113,15 +1115,15 @@ public class LexiconInteractor extends InteractorImpl {
         try {
             addGroupEntry(user, user.getGroupCodeString(), LexiconMatchType.MATCH, MiraiCodeUtility.contentToString(key), reply);
         } catch (Exception exception) {
-            user.sendError("正则表达式「{key}」有错误：" + exception + "，请仔细核对。");
+            user.sendError("正则表达式「" + key + "」有错误：" + exception + "，请仔细核对。");
         }
     }
 
     @NonNext
-    @Filter(CommandWords.ADD + CommandWords.THIS + CommandWords.GROUP + START + MATCH + ENTRY + " {key} {remain}")
-    @Filter(CommandWords.NEW + CommandWords.THIS + CommandWords.GROUP + START + MATCH + ENTRY + " {key} {remain}")
-    @Permission("lexicons.group.{group}.add")
-    public void onAddThisGroupStartMatchEntry(GroupXiaomingUser user, @FilterParameter("key") String key, @FilterParameter("remain") String reply) {
+    @Filter(CommandWords.ADD + CommandWords.THIS + CommandWords.GROUP + START + MATCH + ENTRY + " {触发词} {r:回复}")
+    @Filter(CommandWords.NEW + CommandWords.THIS + CommandWords.GROUP + START + MATCH + ENTRY + " {触发词} {r:回复}")
+    @Permission("lexicons.group.{user.groupCode}.add")
+    public void onAddThisGroupStartMatchEntry(GroupXiaomingUser user, @FilterParameter("触发词") String key, @FilterParameter("回复") String reply) {
         if (!MiraiCodeUtility.getImages(key).isEmpty()) {
             user.sendError("有关正则表达式的匹配规则中不能包含图片");
             return;
@@ -1129,15 +1131,15 @@ public class LexiconInteractor extends InteractorImpl {
         try {
             addGroupEntry(user, user.getGroupCodeString(), LexiconMatchType.START_MATCH, MiraiCodeUtility.contentToString(key), reply);
         } catch (Exception exception) {
-            user.sendError("正则表达式「{key}」有错误：" + exception + "，请仔细核对。");
+            user.sendError("正则表达式「" + key + "」有错误：" + exception + "，请仔细核对。");
         }
     }
 
     @NonNext
-    @Filter(CommandWords.ADD + CommandWords.THIS + CommandWords.GROUP + END + MATCH + ENTRY + " {key} {remain}")
-    @Filter(CommandWords.NEW + CommandWords.THIS + CommandWords.GROUP + END + MATCH + ENTRY + " {key} {remain}")
-    @Permission("lexicons.group.{group}.add")
-    public void onAddThisGroupEndMatchEntry(GroupXiaomingUser user, @FilterParameter("key") String key, @FilterParameter("remain") String reply) {
+    @Filter(CommandWords.ADD + CommandWords.THIS + CommandWords.GROUP + END + MATCH + ENTRY + " {触发词} {r:回复}")
+    @Filter(CommandWords.NEW + CommandWords.THIS + CommandWords.GROUP + END + MATCH + ENTRY + " {触发词} {r:回复}")
+    @Permission("lexicons.group.{user.groupCode}.add")
+    public void onAddThisGroupEndMatchEntry(GroupXiaomingUser user, @FilterParameter("触发词") String key, @FilterParameter("回复") String reply) {
         if (!MiraiCodeUtility.getImages(key).isEmpty()) {
             user.sendError("有关正则表达式的匹配规则中不能包含图片");
             return;
@@ -1145,15 +1147,15 @@ public class LexiconInteractor extends InteractorImpl {
         try {
             addGroupEntry(user, user.getGroupCodeString(), LexiconMatchType.END_MATCH, MiraiCodeUtility.contentToString(key), reply);
         } catch (Exception exception) {
-            user.sendError("正则表达式「{key}」有错误：" + exception + "，请仔细核对。");
+            user.sendError("正则表达式「" + key + "」有错误：" + exception + "，请仔细核对。");
         }
     }
 
     @NonNext
-    @Filter(CommandWords.ADD + CommandWords.THIS + CommandWords.GROUP + PARAMETER + ENTRY + " {key} {remain}")
-    @Filter(CommandWords.NEW + CommandWords.THIS + CommandWords.GROUP + PARAMETER + ENTRY + " {key} {remain}")
-    @Permission("lexicons.group.{group}.add")
-    public void onAddThisGroupParameterEntry(GroupXiaomingUser user, @FilterParameter("key") String key, @FilterParameter("remain") String reply) {
+    @Filter(CommandWords.ADD + CommandWords.THIS + CommandWords.GROUP + PARAMETER + ENTRY + " {触发词} {r:回复}")
+    @Filter(CommandWords.NEW + CommandWords.THIS + CommandWords.GROUP + PARAMETER + ENTRY + " {触发词} {r:回复}")
+    @Permission("lexicons.group.{user.groupCode}.add")
+    public void onAddThisGroupParameterEntry(GroupXiaomingUser user, @FilterParameter("触发词") String key, @FilterParameter("回复") String reply) {
         if (!MiraiCodeUtility.getImages(key).isEmpty()) {
             user.sendError("有关参数的匹配规则中不能包含图片");
             return;
@@ -1161,25 +1163,25 @@ public class LexiconInteractor extends InteractorImpl {
         try {
             addGroupEntry(user, user.getGroupCodeString(), LexiconMatchType.PARAMETER, MiraiCodeUtility.contentToString(key), reply);
         } catch (Exception exception) {
-            user.sendError("正则表达式「{key}」有错误：" + exception + "，请仔细核对。");
+            user.sendError("正则表达式「" + key + "」有错误：" + exception + "，请仔细核对。");
         }
     }
 
     @NonNext
-    @Filter(CommandWords.ADD + CommandWords.THIS + CommandWords.GROUP + CONTAIN + ENTRY + " {key} {remain}")
-    @Filter(CommandWords.NEW + CommandWords.THIS + CommandWords.GROUP + CONTAIN + ENTRY + " {key} {remain}")
-    @Filter(CommandWords.ADD + CommandWords.THIS + CommandWords.GROUP + CONTAIN + EQUAL + ENTRY + " {key} {remain}")
-    @Filter(CommandWords.NEW + CommandWords.THIS + CommandWords.GROUP + CONTAIN + EQUAL + ENTRY + " {key} {remain}")
-    @Permission("lexicons.group.{group}.add")
-    public void onAddThisGroupContainEqualEntry(GroupXiaomingUser user, @FilterParameter("key") String key, @FilterParameter("remain") String reply) {
+    @Filter(CommandWords.ADD + CommandWords.THIS + CommandWords.GROUP + CONTAIN + ENTRY + " {触发词} {r:回复}")
+    @Filter(CommandWords.NEW + CommandWords.THIS + CommandWords.GROUP + CONTAIN + ENTRY + " {触发词} {r:回复}")
+    @Filter(CommandWords.ADD + CommandWords.THIS + CommandWords.GROUP + CONTAIN + EQUAL + ENTRY + " {触发词} {r:回复}")
+    @Filter(CommandWords.NEW + CommandWords.THIS + CommandWords.GROUP + CONTAIN + EQUAL + ENTRY + " {触发词} {r:回复}")
+    @Permission("lexicons.group.{user.groupCode}.add")
+    public void onAddThisGroupContainEqualEntry(GroupXiaomingUser user, @FilterParameter("触发词") String key, @FilterParameter("回复") String reply) {
         addGroupEntry(user, user.getGroupCodeString(), LexiconMatchType.CONTAIN_EQUAL, key, reply);
     }
 
     @NonNext
-    @Filter(CommandWords.ADD + CommandWords.THIS + CommandWords.GROUP + CONTAIN + MATCH + ENTRY + " {key} {remain}")
-    @Filter(CommandWords.NEW + CommandWords.THIS + CommandWords.GROUP + CONTAIN + MATCH + ENTRY + " {key} {remain}")
-    @Permission("lexicons.group.{group}.add")
-    public void onAddThisGroupContainMatchEntry(GroupXiaomingUser user, @FilterParameter("key") String key, @FilterParameter("remain") String reply) {
+    @Filter(CommandWords.ADD + CommandWords.THIS + CommandWords.GROUP + CONTAIN + MATCH + ENTRY + " {触发词} {r:回复}")
+    @Filter(CommandWords.NEW + CommandWords.THIS + CommandWords.GROUP + CONTAIN + MATCH + ENTRY + " {触发词} {r:回复}")
+    @Permission("lexicons.group.{user.groupCode}.add")
+    public void onAddThisGroupContainMatchEntry(GroupXiaomingUser user, @FilterParameter("触发词") String key, @FilterParameter("回复") String reply) {
         if (!MiraiCodeUtility.getImages(key).isEmpty()) {
             user.sendError("有关正则表达式的匹配规则中不能包含图片");
             return;
@@ -1187,21 +1189,21 @@ public class LexiconInteractor extends InteractorImpl {
         try {
             addGroupEntry(user, user.getGroupCodeString(), LexiconMatchType.CONTAIN_MATCH, key, reply);
         } catch (Exception exception) {
-            user.sendError("正则表达式「{key}」有错误：" + exception + "，请仔细核对。");
+            user.sendError("正则表达式「" + key + "」有错误：" + exception + "，请仔细核对。");
         }
     }
 
     @NonNext
-    @Filter(CommandWords.THIS + CommandWords.GROUP + ENTRY + " {groupEntry}")
-    @Permission("lexicons.group.{group}.look")
-    public void onLookThisGroupEntry(GroupXiaomingUser user, @FilterParameter("groupEntry") LexiconEntry entry) {
+    @Filter(CommandWords.THIS + CommandWords.GROUP + ENTRY + " {群词条}")
+    @Permission("lexicons.group.{user.groupCode}.look")
+    public void onLookThisGroupEntry(GroupXiaomingUser user, @FilterParameter("群词条") LexiconEntry entry) {
         user.sendMessage("【群聊词条详情】：\n" + entry);
     }
 
     @NonNext
     @Filter(CommandWords.THIS + CommandWords.GROUP + ENTRY)
     @Filter(CommandWords.THIS + CommandWords.GROUP + LEXICON)
-    @Permission("lexicons.group.{group}.list")
+    @Permission("lexicons.group.{user.groupCode}.list")
     public void onListThisGroupEntry(GroupXiaomingUser user) {
         final Set<LexiconEntry> groupEntries = manager.forGroupEntries(user.getGroupCodeString());
         if (CollectionUtility.isEmpty(groupEntries)) {
@@ -1213,30 +1215,30 @@ public class LexiconInteractor extends InteractorImpl {
     }
 
     @NonNext
-    @Filter(CommandWords.REMOVE + CommandWords.THIS + CommandWords.GROUP + ENTRY + " {groupEntry}")
-    @Permission("lexicons.group.{group}.remove")
-    public void onRemoveThisGroupEntry(GroupXiaomingUser user, @FilterParameter("groupEntry") LexiconEntry entry, @FilterParameter("groupEntry") String key) {
+    @Filter(CommandWords.REMOVE + CommandWords.THIS + CommandWords.GROUP + ENTRY + " {群词条}")
+    @Permission("lexicons.group.{user.groupCode}.remove")
+    public void onRemoveThisGroupEntry(GroupXiaomingUser user, @FilterParameter("群词条") LexiconEntry entry, @FilterParameter("群词条") String key) {
         removeGroupEntry(user, user.getGroupCodeString(), entry, key);
     }
 
     @NonNext
-    @Filter(CommandWords.REMOVE + CommandWords.THIS + CommandWords.GROUP + ENTRY + RULE + " {groupEntry}")
-    @Permission("lexicons.group.{group}.remove")
-    public void onRemoveThisGroupEntryRule(GroupXiaomingUser user, @FilterParameter("groupEntry") LexiconEntry entry) {
+    @Filter(CommandWords.REMOVE + CommandWords.THIS + CommandWords.GROUP + ENTRY + RULE + " {群词条}")
+    @Permission("lexicons.group.{user.groupCode}.remove")
+    public void onRemoveThisGroupEntryRule(GroupXiaomingUser user, @FilterParameter("群词条") LexiconEntry entry) {
         removeGroupEntryRule(user, user.getGroupCodeString(), entry);
     }
 
     @NonNext
-    @Filter(CommandWords.REMOVE + CommandWords.THIS + CommandWords.GROUP + ENTRY + REPLY + " {groupEntry} {remain}")
-    @Permission("lexicons.group.{group}.remove")
-    public void onRemoveThisGroupEntryReply(GroupXiaomingUser user, @FilterParameter("groupEntry") LexiconEntry entry, @FilterParameter("groupEntry") String key, @FilterParameter("remain") String reply) {
+    @Filter(CommandWords.REMOVE + CommandWords.THIS + CommandWords.GROUP + ENTRY + REPLY + " {群词条} {r:回复}")
+    @Permission("lexicons.group.{user.groupCode}.remove")
+    public void onRemoveThisGroupEntryReply(GroupXiaomingUser user, @FilterParameter("群词条") LexiconEntry entry, @FilterParameter("群词条") String key, @FilterParameter("回复") String reply) {
         removeGroupEntryReply(user, user.getGroupCodeString(), entry, key, reply);
     }
 
     @NonNext
-    @Filter(CommandWords.REMOVE + CommandWords.THIS + CommandWords.GROUP + ENTRY + REPLY + " {groupEntry}")
-    @Permission("lexicons.group.{group}.remove")
-    public void onRemoveThisGroupEntryReplyIndex(GroupXiaomingUser user, @FilterParameter("groupEntry") LexiconEntry entry, @FilterParameter("groupEntry") String key) {
+    @Filter(CommandWords.REMOVE + CommandWords.THIS + CommandWords.GROUP + ENTRY + REPLY + " {群词条}")
+    @Permission("lexicons.group.{user.groupCode}.remove")
+    public void onRemoveThisGroupEntryReplyIndex(GroupXiaomingUser user, @FilterParameter("群词条") LexiconEntry entry, @FilterParameter("群词条") String key) {
         removeGroupEntryReplyIndex(user, user.getGroupCodeString(), entry, key);
     }
 
@@ -1259,68 +1261,18 @@ public class LexiconInteractor extends InteractorImpl {
     }
 
     @NonNext
-    @Filter(CommandWords.ADD + CommandWords.THIS + CommandWords.GROUP + ENTRY + REPLY + " {key} {remain}")
-    @Filter(CommandWords.NEW + CommandWords.THIS + CommandWords.GROUP + ENTRY + REPLY + " {key} {remain}")
-    @Permission("lexicons.group.{groupTag}.add")
-    public void onAddThisGroupEntryReply(GroupXiaomingUser user, @FilterParameter("key") String key, @FilterParameter("remain") String reply) {
+    @Filter(CommandWords.ADD + CommandWords.THIS + CommandWords.GROUP + ENTRY + REPLY + " {触发词} {r:回复}")
+    @Filter(CommandWords.NEW + CommandWords.THIS + CommandWords.GROUP + ENTRY + REPLY + " {触发词} {r:回复}")
+    @Permission("lexicons.group.{user.groupCode}.add")
+    public void onAddThisGroupEntryReply(GroupXiaomingUser user, @FilterParameter("触发词") String key, @FilterParameter("回复") String reply) {
         addGroupEntryReply(user, user.getGroupCodeString(), key, reply);
     }
 
     @NonNext
-    @Filter(BATCH + CommandWords.ADD + CommandWords.THIS + CommandWords.GROUP + ENTRY + REPLY + " {key}")
-    @Filter(BATCH + CommandWords.NEW + CommandWords.THIS + CommandWords.GROUP + ENTRY + REPLY + " {key}")
-    @Permission("lexicons.group.{groupTag}.add")
-    public void onAddThisGroupEntryReplyOneByOne(GroupXiaomingUser user, @FilterParameter("key") String key) {
+    @Filter(BATCH + CommandWords.ADD + CommandWords.THIS + CommandWords.GROUP + ENTRY + REPLY + " {触发词}")
+    @Filter(BATCH + CommandWords.NEW + CommandWords.THIS + CommandWords.GROUP + ENTRY + REPLY + " {触发词}")
+    @Permission("lexicons.group.{user.groupCode}.add")
+    public void onAddThisGroupEntryReplyOneByOne(GroupXiaomingUser user, @FilterParameter("触发词") String key) {
         addGroupEntryReplyOneByOne(user, user.getGroupCodeString(), key);
-    }
-
-    @Override
-    public <T> T parseParameter(XiaomingUser user, Class<T> clazz, String parameterName, String currentValue, Map<String, String> argumentValues, String defaultValue) {
-        final T t = super.parseParameter(user, clazz, parameterName, currentValue, argumentValues, defaultValue);
-        if (Objects.nonNull(t)) {
-            return t;
-        }
-
-        if (clazz.isAssignableFrom(LexiconEntry.class)) {
-            switch (parameterName) {
-                case "globalEntry": {
-                    final LexiconEntry lexiconEntry = manager.forGlobalEntry(currentValue);
-                    if (Objects.isNull(lexiconEntry)) {
-                        user.sendError("并没有全局词条「" + currentValue + "」");
-                        return null;
-                    } else {
-                        return ((T) lexiconEntry);
-                    }
-                }
-                case "personalEntry": {
-                    final LexiconEntry lexiconEntry = manager.forPersonalEntry(user.getCode(), currentValue);
-                    if (Objects.isNull(lexiconEntry)) {
-                        user.sendError("你没有私人词条「" + currentValue + "」哦");
-                        return null;
-                    } else {
-                        return ((T) lexiconEntry);
-                    }
-                }
-                case "groupEntry": {
-                    final String groupTag;
-                    if (Objects.nonNull(argumentValues) && argumentValues.containsKey("groupTag")) {
-                        groupTag = argumentValues.get("groupTag");
-                    } else {
-                        CheckUtility.checkState(user instanceof GroupXiaomingUser, "user is not a instance of GroupXiaomingUser!");
-                        groupTag = ((GroupXiaomingUser) user).getGroupCodeString();
-                    }
-
-                    final LexiconEntry lexiconEntry = manager.forGroupEntry(groupTag, currentValue);
-                    if (Objects.isNull(lexiconEntry)) {
-                        user.sendError("「" + groupTag + "」群中没有词条「" + currentValue + "」");
-                        return null;
-                    } else {
-                        return ((T) lexiconEntry);
-                    }
-                }
-                default:
-            }
-        }
-        return null;
     }
 }

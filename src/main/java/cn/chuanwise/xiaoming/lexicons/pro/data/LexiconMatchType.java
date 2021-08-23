@@ -1,5 +1,7 @@
 package cn.chuanwise.xiaoming.lexicons.pro.data;
 
+import cn.chuanwise.api.ChineseConvertable;
+import cn.chuanwise.exception.UnsupportedVersionException;
 import cn.chuanwise.utility.CollectionUtility;
 import cn.chuanwise.xiaoming.lexicons.pro.LexiconsProPlugin;
 import org.apache.commons.collections4.BidiMap;
@@ -7,7 +9,7 @@ import org.apache.commons.collections4.bidimap.DualHashBidiMap;
 
 import java.util.Objects;
 
-public enum LexiconMatchType {
+public enum LexiconMatchType implements ChineseConvertable {
     START_EQUAL,
     START_MATCH,
     END_EQUAL,
@@ -33,11 +35,12 @@ public enum LexiconMatchType {
         CHINESE_CONVERTOR.put(CONTAIN_MATCH, "包含匹配");
     }
 
+    @Override
     public String toChinese() {
         final String result = CHINESE_CONVERTOR.get(this);
         if (Objects.isNull(result)) {
-            LexiconsProPlugin.INSTANCE.throwUnsupportedVersionException("matcherType: " + this + ", " +
-                    "only types in {" + CollectionUtility.toString(CHINESE_CONVERTOR.keySet(), ", ") + "} are supported.", null);
+            throw new UnsupportedVersionException("matcherType: " + this + ", " +
+                    "only types in {" + CollectionUtility.toString(CHINESE_CONVERTOR.keySet(), ", ") + "} are supported.");
         }
         return result;
     }
@@ -45,8 +48,8 @@ public enum LexiconMatchType {
     public static LexiconMatchType fromChinese(String chinese) {
         final LexiconMatchType result = CHINESE_CONVERTOR.getKey(chinese);
         if (Objects.isNull(result)) {
-            LexiconsProPlugin.INSTANCE.throwUnsupportedVersionException("matcherType: " + chinese + ", " +
-                    "only chinese names in {" + CollectionUtility.toString(CHINESE_CONVERTOR.values(), ", ") + "} are supported.", null);
+            throw new UnsupportedVersionException("name of matcherType: " + chinese + ", " +
+                    "only chinese name in {" + CollectionUtility.toString(CHINESE_CONVERTOR.values(), ", ") + "} are supported.");
         }
         return result;
     }

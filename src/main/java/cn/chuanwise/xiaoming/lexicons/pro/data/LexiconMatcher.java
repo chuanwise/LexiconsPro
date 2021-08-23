@@ -1,8 +1,9 @@
 package cn.chuanwise.xiaoming.lexicons.pro.data;
 
+import cn.chuanwise.exception.UnsupportedVersionException;
+import cn.chuanwise.pattern.ParameterPattern;
 import cn.chuanwise.utility.CheckUtility;
 import cn.chuanwise.utility.StringUtility;
-import cn.chuanwise.xiaoming.interactor.filter.ParameterFilterMatcher;
 import cn.chuanwise.xiaoming.lexicons.pro.LexiconsProPlugin;
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -19,7 +20,7 @@ public class LexiconMatcher {
     LexiconMatchType matchType = LexiconMatchType.EQUAL;
     String content;
 
-    transient ParameterFilterMatcher parameterFilterMatcher;
+    transient ParameterPattern parameterPattern;
     transient Pattern pattern;
 
     public LexiconMatcher(LexiconMatchType matchType, String content) {
@@ -35,13 +36,13 @@ public class LexiconMatcher {
     }
 
     @Transient
-    public ParameterFilterMatcher getParameterFilterMatcher() {
+    public ParameterPattern getParameterPattern() {
         CheckUtility.checkState(matchType == LexiconMatchType.PARAMETER, "can not call the method: getParameterFilterMatcher() " +
                 "for a lexicon matcher without matchType equals to \"PARAMETER\"!");
-        if (Objects.isNull(parameterFilterMatcher)) {
-            parameterFilterMatcher = new ParameterFilterMatcher(content);
+        if (Objects.isNull(parameterPattern)) {
+            parameterPattern = new ParameterPattern(content);
         }
-        return parameterFilterMatcher;
+        return parameterPattern;
     }
 
     @Transient
@@ -59,7 +60,7 @@ public class LexiconMatcher {
 
     protected void flush() {
         if (matchType == LexiconMatchType.PARAMETER) {
-            getParameterFilterMatcher();
+            getParameterPattern();
         } else if (matchType == LexiconMatchType.START_MATCH ||
                 matchType == LexiconMatchType.END_MATCH ||
                 matchType == LexiconMatchType.MATCH) {
@@ -82,7 +83,7 @@ public class LexiconMatcher {
                 return input.equalsIgnoreCase(content);
 
             case PARAMETER:
-                return getParameterFilterMatcher().matches(input);
+                return getParameterPattern().matches(input);
 
             case START_MATCH:
                 return StringUtility.startMatches(input, pattern);
@@ -95,8 +96,7 @@ public class LexiconMatcher {
                 return pattern.matcher(input).find();
 
             default:
-                LexiconsProPlugin.INSTANCE.throwUnsupportedVersionException("matcherType: " + matchType);
-                return false;
+                throw new UnsupportedVersionException("matcherType: " + matchType);
         }
     }
 
