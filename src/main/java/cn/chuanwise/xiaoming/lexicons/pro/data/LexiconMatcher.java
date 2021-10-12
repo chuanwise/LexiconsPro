@@ -1,10 +1,10 @@
 package cn.chuanwise.xiaoming.lexicons.pro.data;
 
+import cn.chuanwise.api.Flushable;
 import cn.chuanwise.exception.UnsupportedVersionException;
 import cn.chuanwise.pattern.ParameterPattern;
-import cn.chuanwise.utility.CheckUtility;
-import cn.chuanwise.utility.StringUtility;
-import cn.chuanwise.xiaoming.lexicons.pro.LexiconsProPlugin;
+import cn.chuanwise.util.ConditionUtil;
+import cn.chuanwise.util.StringUtil;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -16,7 +16,8 @@ import java.util.regex.Pattern;
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
-public class LexiconMatcher {
+public class LexiconMatcher
+        implements Flushable {
     LexiconMatchType matchType = LexiconMatchType.EQUAL;
     String content;
 
@@ -37,7 +38,7 @@ public class LexiconMatcher {
 
     @Transient
     public ParameterPattern getParameterPattern() {
-        CheckUtility.checkState(matchType == LexiconMatchType.PARAMETER, "can not call the method: getParameterFilterMatcher() " +
+        ConditionUtil.checkState(matchType == LexiconMatchType.PARAMETER, "can not call the method: getParameterFilterMatcher() " +
                 "for a lexicon matcher without matchType equals to \"PARAMETER\"!");
         if (Objects.isNull(parameterPattern)) {
             parameterPattern = new ParameterPattern(content);
@@ -47,7 +48,7 @@ public class LexiconMatcher {
 
     @Transient
     public Pattern getPattern() {
-        CheckUtility.checkState(matchType == LexiconMatchType.START_MATCH ||
+        ConditionUtil.checkState(matchType == LexiconMatchType.START_MATCH ||
                 matchType == LexiconMatchType.END_MATCH ||
                 matchType == LexiconMatchType.CONTAIN_MATCH ||
                 matchType == LexiconMatchType.MATCH, "can not call the method: getPattern() " +
@@ -58,7 +59,8 @@ public class LexiconMatcher {
         return pattern;
     }
 
-    protected void flush() {
+    @Override
+    public void flush() {
         if (matchType == LexiconMatchType.PARAMETER) {
             getParameterPattern();
         } else if (matchType == LexiconMatchType.START_MATCH ||
@@ -86,11 +88,11 @@ public class LexiconMatcher {
                 return getParameterPattern().matches(input);
 
             case START_MATCH:
-                return StringUtility.startMatches(input, pattern);
+                return StringUtil.startMatches(input, pattern);
             case END_MATCH:
-                return StringUtility.endMatches(input, pattern);
+                return StringUtil.endMatches(input, pattern);
             case MATCH:
-                return StringUtility.endMatches(input, pattern);
+                return StringUtil.endMatches(input, pattern);
 
             case CONTAIN_MATCH:
                 return pattern.matcher(input).find();

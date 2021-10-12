@@ -1,11 +1,12 @@
 package cn.chuanwise.xiaoming.lexicons.pro.data;
 
 import cn.chuanwise.exception.UnsupportedVersionException;
-import cn.chuanwise.utility.*;
+import cn.chuanwise.util.*;
 import cn.chuanwise.xiaoming.lexicons.pro.LexiconsProPlugin;
 import lombok.Data;
 
 import java.util.HashSet;
+import java.util.Optional;
 import java.util.Set;
 
 @Data
@@ -13,10 +14,10 @@ public class LexiconEntry {
     Set<LexiconMatcher> matchers = new HashSet<>();
     Set<String> replies = new HashSet<>();
 
-    public String apply(String input) {
+    public Optional<String> apply(String input) {
         for (LexiconMatcher matcher : matchers) {
             if (matcher.apply(input)) {
-                final String reply = replies.toArray(new String[0])[RandomUtility.nextInt(replies.size())];
+                final String reply = replies.toArray(new String[0])[RandomUtil.nextInt(replies.size())];
                 final LexiconMatchType matchType = matcher.getMatchType();
 
                 switch (matchType) {
@@ -28,16 +29,17 @@ public class LexiconEntry {
                     case MATCH:
                     case END_MATCH:
                     case START_MATCH:
-                        return reply;
+                        return Optional.of(reply);
                     case PARAMETER:
-                        ArgumentUtility.format(reply, LexiconsProPlugin.INSTANCE.getConfiguration().getMaxIterateTime(), matcher.getParameterPattern().parse(input));
-                        break;
+                        return Optional.of(ArgumentUtil.format(reply,
+                                LexiconsProPlugin.INSTANCE.getConfiguration().getMaxIterateTime(),
+                                matcher.getParameterPattern().parse(input).orElseThrow()));
                     default:
                         throw new UnsupportedVersionException();
                 }
             }
         }
-        return null;
+        return Optional.empty();
     }
 
     public void addMatcher(LexiconMatcher matcher) {
@@ -58,7 +60,7 @@ public class LexiconEntry {
 
     @Override
     public String toString() {
-        return "匹配规则：" + ObjectUtility.getOrConduct(CollectionUtility.toIndexString(matchers), StringUtility::nonEmpty, string -> ("\n" + string), "（无）") + "\n" +
-                "回复：" + ObjectUtility.getOrConduct(CollectionUtility.toIndexString(replies), StringUtility::nonEmpty, string -> ("\n" + string), "（无）");
+        return "匹配规则：" + ObjectUtil.getOrConduct(CollectionUtil.toIndexString(matchers), StringUtil::notEmpty, string -> ("\n" + string), "（无）") + "\n" +
+                "回复：" + ObjectUtil.getOrConduct(CollectionUtil.toIndexString(replies), StringUtil::notEmpty, string -> ("\n" + string), "（无）");
     }
 }

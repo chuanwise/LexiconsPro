@@ -6,4 +6,5 @@ import lombok.Data;
 @Data
 public class LexiconConfiguration extends FilePreservableImpl {
     int maxIterateTime;
+    String interactPermission = "lexicons.interact";
 }

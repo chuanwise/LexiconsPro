@@ -1,8 +1,8 @@
 package cn.chuanwise.xiaoming.lexicons.pro.data;
 
 import cn.chuanwise.toolkit.preservable.file.FilePreservableImpl;
-import cn.chuanwise.utility.CollectionUtility;
-import cn.chuanwise.utility.MapUtility;
+import cn.chuanwise.util.CollectionUtil;
+import cn.chuanwise.util.MapUtil;
 import lombok.Data;
 
 import java.util.*;
@@ -13,22 +13,22 @@ public class LexiconManager extends FilePreservableImpl {
     Map<String, Set<LexiconEntry>> groupEntries = new HashMap<>();
     Map<Long, Set<LexiconEntry>> personalEntries = new HashMap<>();
 
-    public LexiconEntry forGlobalEntry(String input) {
+    public Optional<LexiconEntry> forGlobalEntry(String input) {
         return forEntry(globalEntries, input);
     }
 
-    public LexiconEntry forGroupEntry(String tag, String input) {
+    public Optional<LexiconEntry> forGroupEntry(String tag, String input) {
         final Set<LexiconEntry> lexiconEntries = groupEntries.get(tag);
-        if (CollectionUtility.isEmpty(lexiconEntries)) {
-            return null;
+        if (CollectionUtil.isEmpty(lexiconEntries)) {
+            return Optional.empty();
         }
         return forEntry(lexiconEntries, input);
     }
 
-    public LexiconEntry forPersonalEntry(long code, String input) {
+    public Optional<LexiconEntry> forPersonalEntry(long code, String input) {
         final Set<LexiconEntry> lexiconEntries = personalEntries.get(code);
-        if (CollectionUtility.isEmpty(lexiconEntries)) {
-            return null;
+        if (CollectionUtil.isEmpty(lexiconEntries)) {
+            return Optional.empty();
         }
         return forEntry(lexiconEntries, input);
     }
@@ -39,22 +39,22 @@ public class LexiconManager extends FilePreservableImpl {
 
     public Set<LexiconEntry> forGroupEntries(String tag, String input) {
         final Set<LexiconEntry> lexiconEntries = groupEntries.get(tag);
-        if (CollectionUtility.isEmpty(lexiconEntries)) {
+        if (CollectionUtil.isEmpty(lexiconEntries)) {
             return null;
         }
         return forEntries(lexiconEntries, input);
     }
 
-    public Set<LexiconEntry> forGroupEntries(String tag) {
-        return groupEntries.get(tag);
+    public Optional<Set<LexiconEntry>> forGroupEntries(String tag) {
+        return Optional.ofNullable(groupEntries.get(tag));
     }
 
-    public Set<LexiconEntry> forPersonalEntries(long code, String input) {
+    public Optional<Set<LexiconEntry>> forPersonalEntries(long code, String input) {
         final Set<LexiconEntry> lexiconEntries = personalEntries.get(code);
-        if (CollectionUtility.isEmpty(lexiconEntries)) {
-            return null;
+        if (CollectionUtil.isEmpty(lexiconEntries)) {
+            return Optional.empty();
         }
-        return forEntries(lexiconEntries, input);
+        return Optional.of(forEntries(lexiconEntries, input));
     }
 
     public Set<LexiconEntry> forPersonalEntries(long code) {
@@ -67,7 +67,7 @@ public class LexiconManager extends FilePreservableImpl {
 
     public void removeGroupEntry(String tag, LexiconEntry entry) {
         final Set<LexiconEntry> lexiconEntries = groupEntries.get(tag);
-        if (CollectionUtility.isEmpty(lexiconEntries)) {
+        if (CollectionUtil.isEmpty(lexiconEntries)) {
             return;
         }
         lexiconEntries.remove(entry);
@@ -78,7 +78,7 @@ public class LexiconManager extends FilePreservableImpl {
 
     public void removePersonalEntry(long code, LexiconEntry entry) {
         final Set<LexiconEntry> lexiconEntries = personalEntries.get(code);
-        if (CollectionUtility.isEmpty(lexiconEntries)) {
+        if (CollectionUtil.isEmpty(lexiconEntries)) {
             return;
         }
         lexiconEntries.remove(entry);
@@ -92,23 +92,23 @@ public class LexiconManager extends FilePreservableImpl {
     }
 
     public void addGroupEntry(String tag, LexiconEntry entry) {
-        final Set<LexiconEntry> lexiconEntries = MapUtility.getOrPutSupply(groupEntries, tag, HashSet::new);
+        final Set<LexiconEntry> lexiconEntries = MapUtil.getOrPutSupply(groupEntries, tag, HashSet::new);
         lexiconEntries.add(entry);
     }
 
     public void addPersonalEntry(long code, LexiconEntry entry) {
-        final Set<LexiconEntry> lexiconEntries = MapUtility.getOrPutSupply(personalEntries, code, HashSet::new);
+        final Set<LexiconEntry> lexiconEntries = MapUtil.getOrPutSupply(personalEntries, code, HashSet::new);
         lexiconEntries.add(entry);
     }
 
 
-    protected LexiconEntry forEntry(Set<LexiconEntry> entries, String input) {
+    protected Optional<LexiconEntry> forEntry(Set<LexiconEntry> entries, String input) {
         for (LexiconEntry lexiconEntry : entries) {
-            if (Objects.nonNull(lexiconEntry.apply(input))) {
-                return lexiconEntry;
+            if (lexiconEntry.apply(input).isPresent()) {
+                return Optional.of(lexiconEntry);
             }
         }
-        return null;
+        return Optional.empty();
     }
 
     protected Set<LexiconEntry> forEntries(Set<LexiconEntry> entries, String input) {
