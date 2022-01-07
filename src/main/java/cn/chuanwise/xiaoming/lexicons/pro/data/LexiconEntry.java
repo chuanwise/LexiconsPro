@@ -5,35 +5,44 @@ import cn.chuanwise.util.*;
 import cn.chuanwise.xiaoming.lexicons.pro.LexiconsProPlugin;
 import lombok.Data;
 
-import java.util.HashSet;
-import java.util.Optional;
-import java.util.Set;
+import java.util.*;
 
 @Data
 public class LexiconEntry {
     Set<LexiconMatcher> matchers = new HashSet<>();
     Set<String> replies = new HashSet<>();
 
+    boolean privateSend = false;
+
+    protected static final String MATCHER = "matcher";
+
     public Optional<String> apply(String input) {
+        final LexiconsProPlugin plugin = LexiconsProPlugin.INSTANCE;
+        final String reply = replies.toArray(new String[0])[RandomUtil.nextInt(replies.size())];
+
         for (LexiconMatcher matcher : matchers) {
             if (matcher.apply(input)) {
-                final String reply = replies.toArray(new String[0])[RandomUtil.nextInt(replies.size())];
-                final LexiconMatchType matchType = matcher.getMatchType();
-
-                switch (matchType) {
+                switch (matcher.getMatchType()) {
+                    case END_MATCH:
+                    case START_MATCH:
+                    case CONTAIN_MATCH:
+                        final String matchedPart = matcher.getPattern().matcher(input).group(1);
+                        return Optional.of(plugin.getXiaomingBot().getLanguageManager().formatAdditional(reply, variable -> {
+                            if (Objects.equals(matchedPart, "matcher")) {
+                                return matchedPart;
+                            }
+                            return null;
+                        }));
                     case START_EQUAL:
                     case EQUAL:
                     case END_EQUAL:
                     case CONTAIN_EQUAL:
                     case EQUAL_IGNORE_CASE:
                     case MATCH:
-                    case END_MATCH:
-                    case START_MATCH:
                         return Optional.of(reply);
                     case PARAMETER:
-                        return Optional.of(ArgumentUtil.format(reply,
-                                LexiconsProPlugin.INSTANCE.getConfiguration().getMaxIterateTime(),
-                                matcher.getParameterPattern().parse(input).orElseThrow()));
+                        final Map<String, String> variableTable = matcher.getParameterPattern().parse(input).orElseThrow(NoSuchElementException::new);
+                        return Optional.of(plugin.getXiaomingBot().getLanguageManager().formatAdditional(reply, variableTable::get));
                     default:
                         throw new UnsupportedVersionException();
                 }

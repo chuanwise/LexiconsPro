@@ -1,6 +1,6 @@
 package cn.chuanwise.xiaoming.lexicons.pro.data;
 
-import cn.chuanwise.toolkit.preservable.file.FilePreservableImpl;
+import cn.chuanwise.toolkit.preservable.AbstractPreservable;
 import cn.chuanwise.util.CollectionUtil;
 import cn.chuanwise.util.MapUtil;
 import lombok.Data;
@@ -8,7 +8,7 @@ import lombok.Data;
 import java.util.*;
 
 @Data
-public class LexiconManager extends FilePreservableImpl {
+public class LexiconManager extends AbstractPreservable {
     Set<LexiconEntry> globalEntries = new HashSet<>();
     Map<String, Set<LexiconEntry>> groupEntries = new HashMap<>();
     Map<Long, Set<LexiconEntry>> personalEntries = new HashMap<>();

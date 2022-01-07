@@ -1,11 +1,14 @@
 package cn.chuanwise.xiaoming.lexicons.pro;
 
+import cn.chuanwise.toolkit.box.Box;
 import cn.chuanwise.toolkit.serialize.exception.SerializerException;
-import cn.chuanwise.util.ConditionUtil;
+import cn.chuanwise.xiaoming.contact.message.Message;
+import cn.chuanwise.xiaoming.event.MessageEvent;
 import cn.chuanwise.xiaoming.lexicons.pro.configuration.LexiconConfiguration;
 import cn.chuanwise.xiaoming.lexicons.pro.data.LexiconEntry;
 import cn.chuanwise.xiaoming.lexicons.pro.data.LexiconManager;
-import cn.chuanwise.xiaoming.lexicons.pro.interactor.LexiconsProInteractors;
+import cn.chuanwise.xiaoming.lexicons.pro.interactors.LexiconsProInteractors;
+import cn.chuanwise.xiaoming.listener.ListenerPriority;
 import cn.chuanwise.xiaoming.plugin.JavaPlugin;
 import cn.chuanwise.xiaoming.user.GroupXiaomingUser;
 import cn.chuanwise.xiaoming.user.XiaomingUser;
@@ -13,10 +16,9 @@ import lombok.Getter;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.NoSuchElementException;
 import java.util.Objects;
 import java.util.Optional;
-
-import cn.chuanwise.toolkit.container.Container;
 
 @Getter
 public class LexiconsProPlugin extends JavaPlugin {
@@ -27,7 +29,20 @@ public class LexiconsProPlugin extends JavaPlugin {
 
     @Override
     public void onLoad() {
-        getDataFolder().mkdirs();
+        final File dataFolder = getDataFolder();
+
+        // 如果不存在插件数据文件夹
+        if (!dataFolder.isDirectory()) {
+            final File elderDataFolder = new File(getDataFolder().getParentFile(), "lexicons-pro");
+
+            // 也不存在老版本插件数据，则就当作第一次使用
+            if (!elderDataFolder.isDirectory()) {
+                dataFolder.mkdirs();
+            } else {
+                // 把 lexicons-pro 文件夹改名为 LexiconsPro
+                elderDataFolder.renameTo(dataFolder);
+            }
+        }
 
         try {
             final LexiconConfiguration configuration = loadFileAs(LexiconConfiguration.class, new File(getDataFolder(), "configurations.json"));
@@ -47,52 +62,73 @@ public class LexiconsProPlugin extends JavaPlugin {
     @Override
     public void onEnable() {
         xiaomingBot.getInteractorManager().registerInteractors(new LexiconsProInteractors(), this);
-        registerParameterParsers();
+
+        setupListeners();
     }
 
-    private void registerParameterParsers() {
-        xiaomingBot.getInteractorManager().registerParameterParser(LexiconEntry.class, context -> {
-            final String inputValue = context.getInputValue();
-            final String parameterName = context.getParameterName();
-            final XiaomingUser user = context.getUser();
+    protected void setupListeners() {
+        xiaomingBot.getEventManager().registerListener(MessageEvent.class, ListenerPriority.NORMAL, false, event -> {
+            final Message message = event.getMessage();
+            final XiaomingUser user = event.getUser();
 
-            switch (parameterName) {
-                case "群词条":
-                case "群聊词条":
-                    final String groupTag;
-                    if (Objects.nonNull(context.getArgument("群标签"))) {
-                        groupTag = context.getArgument("群标签");
-                    } else {
-                        ConditionUtil.checkState(user instanceof GroupXiaomingUser, "user is not a instance of GroupXiaomingUser!");
-                        groupTag = ((GroupXiaomingUser) user).getGroupCodeString();
-                    }
-
-                    final Optional<LexiconEntry> optionalGroupEntry = lexiconManager.forGroupEntry(groupTag, inputValue);
-                    if (optionalGroupEntry.isEmpty()) {
-                        user.sendError("「" + groupTag + "」群中没有词条「" + inputValue + "」");
-                        return null;
-                    } else {
-                        return Container.of(optionalGroupEntry.get());
-                    }
-                case "私人词条":
-                    final Optional<LexiconEntry> optionalPersonalEntry = lexiconManager.forPersonalEntry(user.getCode(), inputValue);
-                    if (optionalPersonalEntry.isEmpty()) {
-                        user.sendError("你没有私人词条「" + inputValue + "」哦");
-                        return null;
-                    } else {
-                        return Container.of(optionalPersonalEntry.get());
-                    }
-                case "全局词条":
-                    final Optional<LexiconEntry> optionalGlobalEntry = lexiconManager.forGlobalEntry(inputValue);
-                    if (optionalGlobalEntry.isEmpty()) {
-                        user.sendError("并没有全局词条「" + inputValue + "」");
-                        return null;
-                    } else {
-                        return Container.of(optionalGlobalEntry.get());
-                    }
-                default:
-                    return Container.empty();
+            final String serializedMessage;
+            if (configuration.isListenOriginalMessage()) {
+                serializedMessage = message.serializeOriginalMessage();
+            } else {
+                serializedMessage = message.serialize();
             }
-        }, true, this);
+            final Box<LexiconEntry> entry = Box.empty();
+
+            // 寻找匹配的词条
+            do {
+                // 先寻找私人词库
+                final Optional<LexiconEntry> optionalEntry = lexiconManager.forPersonalEntry(user.getCode(), serializedMessage);
+                if (optionalEntry.isPresent()) {
+                    entry.set(optionalEntry.get());
+                    break;
+                }
+
+                // 寻找群聊词库
+                if (user instanceof GroupXiaomingUser) {
+                    final GroupXiaomingUser groupXiaomingUser = (GroupXiaomingUser) user;
+
+                    // 查找在所有 tag 群的词库
+                    for (String tag : groupXiaomingUser.getContact().getTags()) {
+                        final Optional<LexiconEntry> groupEntry = lexiconManager.forGroupEntry(tag, serializedMessage);
+                        if (groupEntry.isPresent()) {
+                            entry.set(groupEntry.get());
+                            break;
+                        }
+                    }
+                    if (entry.notNull()) {
+                        break;
+                    }
+                }
+
+                // 寻找全局词库
+                lexiconManager.forGlobalEntry(serializedMessage).ifPresent(entry::set);
+            } while (false);
+
+            // 没有找到词条，不计入调用
+            if (entry.isEmpty()) {
+                return;
+            } else if (configuration.isEnableInteractPermission()
+                    && Objects.nonNull(configuration.getInteractPermission())
+                    && !user.hasPermission(configuration.getInteractPermission())) {
+                user.sendMessage("你还不能调用词条哦，因为你缺少权限：" + configuration.getInteractPermission());
+                return;
+            }
+
+            // 判断回复是否为空
+            final LexiconEntry lexiconEntry = entry.get();
+            final String reply = user.format(lexiconEntry.apply(serializedMessage).orElseThrow(NoSuchElementException::new));
+
+            // 决定到底如何发送
+            if (lexiconEntry.isPrivateSend()) {
+                xiaomingBot.getContactManager().sendPrivateMessagePossibly(user.getCode(), reply);
+            } else {
+                user.getContact().sendMessage(reply);
+            }
+        }, this);
     }
 }

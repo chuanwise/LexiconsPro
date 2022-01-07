@@ -95,7 +95,7 @@ public class LexiconMatcher
                 return StringUtil.endMatches(input, pattern);
 
             case CONTAIN_MATCH:
-                return pattern.matcher(input).find();
+                return getPattern().matcher(input).find();
 
             default:
                 throw new UnsupportedVersionException("matcherType: " + matchType);

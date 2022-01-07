@@ -1,9 +1,9 @@
-package cn.chuanwise.xiaoming.lexicons.pro.interactor;
+package cn.chuanwise.xiaoming.lexicons.pro.interactors;
 
 import cn.chuanwise.toolkit.container.Container;
 import cn.chuanwise.util.CollectionUtil;
+import cn.chuanwise.util.ConditionUtil;
 import cn.chuanwise.xiaoming.annotation.*;
-import cn.chuanwise.xiaoming.contact.message.Message;
 import cn.chuanwise.xiaoming.interactor.SimpleInteractors;
 import cn.chuanwise.xiaoming.lexicons.pro.util.LexiconProWords;
 import cn.chuanwise.xiaoming.user.GroupXiaomingUser;
@@ -26,12 +26,56 @@ import java.util.function.Supplier;
 
 public class LexiconsProInteractors extends SimpleInteractors<LexiconsProPlugin> {
     LexiconConfiguration configuration;
-    LexiconManager manager;
+    LexiconManager lexiconManager;
 
     @Override
     public void onRegister() {
-        this.manager = plugin.getLexiconManager();
+        this.lexiconManager = plugin.getLexiconManager();
         this.configuration = plugin.getConfiguration();
+
+        xiaomingBot.getInteractorManager().registerParameterParser(LexiconEntry.class, context -> {
+            final String inputValue = context.getInputValue();
+            final String parameterName = context.getParameterName();
+            final XiaomingUser user = context.getUser();
+
+            switch (parameterName) {
+                case "群词条":
+                case "群聊词条":
+                    final String groupTag;
+                    if (Objects.nonNull(context.getArgument("群标签"))) {
+                        groupTag = context.getArgument("群标签");
+                    } else {
+                        ConditionUtil.checkState(user instanceof GroupXiaomingUser, "user is not a instance of GroupXiaomingUser!");
+                        groupTag = ((GroupXiaomingUser) user).getGroupCodeString();
+                    }
+
+                    final Optional<LexiconEntry> optionalGroupEntry = lexiconManager.forGroupEntry(groupTag, inputValue);
+                    if (!optionalGroupEntry.isPresent()) {
+                        user.sendError("「" + groupTag + "」群中没有词条「" + inputValue + "」");
+                        return null;
+                    } else {
+                        return Container.of(optionalGroupEntry.get());
+                    }
+                case "私人词条":
+                    final Optional<LexiconEntry> optionalPersonalEntry = lexiconManager.forPersonalEntry(user.getCode(), inputValue);
+                    if (!optionalPersonalEntry.isPresent()) {
+                        user.sendError("你没有私人词条「" + inputValue + "」哦");
+                        return null;
+                    } else {
+                        return Container.of(optionalPersonalEntry.get());
+                    }
+                case "全局词条":
+                    final Optional<LexiconEntry> optionalGlobalEntry = lexiconManager.forGlobalEntry(inputValue);
+                    if (!optionalGlobalEntry.isPresent()) {
+                        user.sendError("并没有全局词条「" + inputValue + "」");
+                        return null;
+                    } else {
+                        return Container.of(optionalGlobalEntry.get());
+                    }
+                default:
+                    return Container.empty();
+            }
+        }, true, plugin);
     }
 
 //    @Incomplete
@@ -48,21 +92,21 @@ public class LexiconsProInteractors extends SimpleInteractors<LexiconsProPlugin>
     private void addGlobalEntry(XiaomingUser user,
                                 LexiconMatchType matchType,
                                 String key, String reply) {
-        addEntry(user, matchType, key, reply, "全局词条", () -> manager.forGlobalEntry(key), manager::addGlobalEntry);
+        addEntry(user, matchType, key, reply, "全局词条", () -> lexiconManager.forGlobalEntry(key), lexiconManager::addGlobalEntry);
     }
 
     private void addPersonalEntry(XiaomingUser user,
                                   LexiconMatchType matchType,
                                   String key, String reply) {
         final long code = user.getCode();
-        addEntry(user, matchType, key, reply, "私人词条", () -> manager.forPersonalEntry(code, key), entry -> manager.addPersonalEntry(code, entry));
+        addEntry(user, matchType, key, reply, "私人词条", () -> lexiconManager.forPersonalEntry(code, key), entry -> lexiconManager.addPersonalEntry(code, entry));
     }
 
     private void addGroupEntry(XiaomingUser user,
                                String groupTag,
                                LexiconMatchType matchType,
                                String key, String reply) {
-        addEntry(user, matchType, key, reply, "群聊词条", () -> manager.forGroupEntry(groupTag, key), entry -> manager.addGroupEntry(groupTag, entry));
+        addEntry(user, matchType, key, reply, "群聊词条", () -> lexiconManager.forGroupEntry(groupTag, key), entry -> lexiconManager.addGroupEntry(groupTag, entry));
     }
 
     private void addEntry(XiaomingUser user,
@@ -73,7 +117,7 @@ public class LexiconsProInteractors extends SimpleInteractors<LexiconsProPlugin>
                           Consumer<LexiconEntry> onAddNewEntry) {
         final Optional<LexiconEntry> optionalEntry = onFindEntry.get();
         final LexiconEntry entry;
-        if (optionalEntry.isEmpty()) {
+        if (!optionalEntry.isPresent()) {
             entry = new LexiconEntry();
         } else {
             user.sendMessage("已经存在" + lexiconType + "「" + key + "」了。\n" +
@@ -85,13 +129,13 @@ public class LexiconsProInteractors extends SimpleInteractors<LexiconsProPlugin>
         final LexiconMatcher matcher = new LexiconMatcher(matchType, key);
         entry.addMatcher(matcher);
         entry.addReply(reply);
-        getXiaomingBot().getFileSaver().readyToSave(manager);
+        onAddNewEntry.accept(entry);
+        getXiaomingBot().getFileSaver().readyToSave(lexiconManager);
 
         asyncSaveImages(MiraiCodeUtil.getImages(key));
         asyncSaveImages(MiraiCodeUtil.getImages(reply));
 
         user.sendMessage("成功创建新的" + lexiconType + "：" + matcher + " => " + reply);
-        onAddNewEntry.accept(entry);
     }
 
     private List<Image> asyncSaveImages(Collection<Image> images) {
@@ -116,7 +160,7 @@ public class LexiconsProInteractors extends SimpleInteractors<LexiconsProPlugin>
                                String lexiconType,
                                Supplier<Optional<LexiconEntry>> onFindEntry) {
         final Optional<LexiconEntry> optionalEntry = onFindEntry.get();
-        if (optionalEntry.isEmpty()) {
+        if (!optionalEntry.isPresent()) {
             user.sendMessage("没有找到" + lexiconType + "「" + key + "」\n" +
                     "先使用「添加" + lexiconType +"  <关键词>  <回复>」添加一个吧！");
             return;
@@ -131,7 +175,7 @@ public class LexiconsProInteractors extends SimpleInteractors<LexiconsProPlugin>
         }
 
         entry.addReply(reply);
-        getXiaomingBot().getFileSaver().readyToSave(manager);
+        getXiaomingBot().getFileSaver().readyToSave(lexiconManager);
 
         asyncSaveImages(MiraiCodeUtil.getImages(key));
         asyncSaveImages(MiraiCodeUtil.getImages(reply));
@@ -142,15 +186,15 @@ public class LexiconsProInteractors extends SimpleInteractors<LexiconsProPlugin>
     }
 
     private void addGlobalEntryReplyOneByOne(XiaomingUser user, String key) {
-        addEntryReplyOneByOne(user, key, "全局词条", () -> manager.forGlobalEntry(key));
+        addEntryReplyOneByOne(user, key, "全局词条", () -> lexiconManager.forGlobalEntry(key));
     }
 
     private void addGroupEntryReplyOneByOne(XiaomingUser user, String groupTag, String key) {
-        addEntryReplyOneByOne(user, key, "群聊词条", () -> manager.forGroupEntry(groupTag, key));
+        addEntryReplyOneByOne(user, key, "群聊词条", () -> lexiconManager.forGroupEntry(groupTag, key));
     }
 
     private void addPersonalEntryReplyOneByOne(XiaomingUser user, String key) {
-        addEntryReplyOneByOne(user, key, "全局词条", () -> manager.forPersonalEntry(user.getCode(), key));
+        addEntryReplyOneByOne(user, key, "全局词条", () -> lexiconManager.forPersonalEntry(user.getCode(), key));
     }
 
     private void addEntryReplyOneByOne(XiaomingUser user,
@@ -158,7 +202,7 @@ public class LexiconsProInteractors extends SimpleInteractors<LexiconsProPlugin>
                                String lexiconType,
                                Supplier<Optional<LexiconEntry>> onFindEntry) {
         final Optional<LexiconEntry> optionalEntry = onFindEntry.get();
-        if (optionalEntry.isEmpty()) {
+        if (!optionalEntry.isPresent()) {
             user.sendMessage("没有找到" + lexiconType + "「" + key + "」\n" +
                     "先使用「添加" + lexiconType +"  <关键词>  <回复>」添加一个吧！");
             return;
@@ -184,7 +228,7 @@ public class LexiconsProInteractors extends SimpleInteractors<LexiconsProPlugin>
             user.sendMessage("成功在现有的" + lexiconType + "「" + key + "」中" +
                     "添加了 " + newReplies.size() + " 条随机回复，" +
                     "该词条已有 " + replies.size() + " 条随机回复");
-            getXiaomingBot().getFileSaver().readyToSave(manager);
+            getXiaomingBot().getFileSaver().readyToSave(lexiconManager);
         }
     }
 
@@ -223,27 +267,27 @@ public class LexiconsProInteractors extends SimpleInteractors<LexiconsProPlugin>
     }
 
     private void addGlobalEntryReply(XiaomingUser user, String key, String reply) {
-        addEntryReply(user, key, reply, "全局词条", () -> manager.forGlobalEntry(key));
+        addEntryReply(user, key, reply, "全局词条", () -> lexiconManager.forGlobalEntry(key));
     }
 
     private void addPersonalEntryReply(XiaomingUser user, String key, String reply) {
-        addEntryReply(user, key, reply, "私人词条", () -> manager.forPersonalEntry(user.getCode(), key));
+        addEntryReply(user, key, reply, "私人词条", () -> lexiconManager.forPersonalEntry(user.getCode(), key));
     }
 
     private void addGroupEntryReply(XiaomingUser user, String groupTag, String key, String reply) {
-        addEntryReply(user, key, reply, "全局词条", () -> manager.forGroupEntry(groupTag, key));
+        addEntryReply(user, key, reply, "全局词条", () -> lexiconManager.forGroupEntry(groupTag, key));
     }
 
     private void removeGlobalEntryRule(XiaomingUser user, LexiconEntry entry) {
-        removeEntryRule(user, entry, "全局词条", manager::removeGlobalEntry);
+        removeEntryRule(user, entry, "全局词条", lexiconManager::removeGlobalEntry);
     }
 
     private void removePersonalEntryRule(XiaomingUser user, LexiconEntry entry) {
-        removeEntryRule(user, entry, "私人词条", e -> manager.removePersonalEntry(user.getCode(), e));
+        removeEntryRule(user, entry, "私人词条", e -> lexiconManager.removePersonalEntry(user.getCode(), e));
     }
 
     private void removeGroupEntryRule(XiaomingUser user, String groupTag, LexiconEntry entry) {
-        removeEntryRule(user, entry, "群聊词条", e -> manager.removeGroupEntry(groupTag, e));
+        removeEntryRule(user, entry, "群聊词条", e -> lexiconManager.removeGroupEntry(groupTag, e));
     }
 
     private void removeEntryRule(XiaomingUser user, LexiconEntry entry, String lexiconType, Consumer<LexiconEntry> onRemoveEntry) {
@@ -257,7 +301,7 @@ public class LexiconsProInteractors extends SimpleInteractors<LexiconsProPlugin>
                 user.sendMessage("成功删除该" + lexiconType + "中的唯一的匹配规则「" + matchers.iterator().next() + "」。" +
                         "因其不再具备任何匹配规则，整个词条也被一并删除");
                 onRemoveEntry.accept(entry);
-                getXiaomingBot().getFileSaver().readyToSave(manager);
+                getXiaomingBot().getFileSaver().readyToSave(lexiconManager);
             } else {
                 user.sendMessage("成功放弃本次删除行为");
             }
@@ -271,49 +315,49 @@ public class LexiconsProInteractors extends SimpleInteractors<LexiconsProPlugin>
         user.sendMessage("成功删除该" + lexiconType + "的匹配规则「" + lexiconMatcher + "」。" +
                 "其还剩 " + matchers.size() + " 条匹配规则。");
 
-        getXiaomingBot().getFileSaver().readyToSave(manager);
+        getXiaomingBot().getFileSaver().readyToSave(lexiconManager);
     }
 
     private void removeEntry(XiaomingUser user, LexiconEntry entry, String key, String lexiconType, Consumer<LexiconEntry> onRemoveEntry) {
         user.sendMessage("成功删除" + lexiconType + "「" + key + "」，其详细信息：\n" + entry);
         onRemoveEntry.accept(entry);
-        getXiaomingBot().getFileSaver().readyToSave(manager);
+        getXiaomingBot().getFileSaver().readyToSave(lexiconManager);
     }
 
     private void removeGlobalEntry(XiaomingUser user, LexiconEntry entry, String key) {
-        removeEntry(user, entry, key, "全局词条", manager::removeGlobalEntry);
+        removeEntry(user, entry, key, "全局词条", lexiconManager::removeGlobalEntry);
     }
 
     private void removePersonalEntry(XiaomingUser user, LexiconEntry entry, String key) {
-        removeEntry(user, entry, key, "私人词条", e -> manager.removePersonalEntry(user.getCode(), e));
+        removeEntry(user, entry, key, "私人词条", e -> lexiconManager.removePersonalEntry(user.getCode(), e));
     }
 
     private void removeGroupEntry(XiaomingUser user, String groupTag, LexiconEntry entry, String key) {
-        removeEntry(user, entry, key, "群聊词条", e -> manager.removeGroupEntry(groupTag, e));
+        removeEntry(user, entry, key, "群聊词条", e -> lexiconManager.removeGroupEntry(groupTag, e));
     }
 
     private void removeGroupEntryReply(XiaomingUser user, String groupTag, LexiconEntry entry, String key, String reply) {
-        removeEntryReply(user, entry, key, reply, "群聊词条", e -> manager.removeGroupEntry(groupTag, entry));
+        removeEntryReply(user, entry, key, reply, "群聊词条", e -> lexiconManager.removeGroupEntry(groupTag, entry));
     }
 
     private void removeGlobalEntryReply(XiaomingUser user, LexiconEntry entry, String key, String reply) {
-        removeEntryReply(user, entry, key, reply, "全局词条", e -> manager.removeGlobalEntry(entry));
+        removeEntryReply(user, entry, key, reply, "全局词条", e -> lexiconManager.removeGlobalEntry(entry));
     }
 
     private void removePersonalEntryReply(XiaomingUser user, LexiconEntry entry, String key, String reply) {
-        removeEntryReply(user, entry, key, reply, "私人词条", e -> manager.removePersonalEntry(user.getCode(), entry));
+        removeEntryReply(user, entry, key, reply, "私人词条", e -> lexiconManager.removePersonalEntry(user.getCode(), entry));
     }
 
     private void removeGroupEntryReplyIndex(XiaomingUser user, String groupTag, LexiconEntry entry, String key) {
-        removeEntryReplyIndex(user, entry, key, "群聊词条", e -> manager.removeGroupEntry(groupTag, entry));
+        removeEntryReplyIndex(user, entry, key, "群聊词条", e -> lexiconManager.removeGroupEntry(groupTag, entry));
     }
 
     private void removeGlobalEntryReplyIndex(XiaomingUser user, LexiconEntry entry, String key) {
-        removeEntryReplyIndex(user, entry, key, "全局词条", e -> manager.removeGlobalEntry(entry));
+        removeEntryReplyIndex(user, entry, key, "全局词条", e -> lexiconManager.removeGlobalEntry(entry));
     }
 
     private void removePersonalEntryReplyIndex(XiaomingUser user, LexiconEntry entry, String key) {
-        removeEntryReplyIndex(user, entry, key, "私人词条", e -> manager.removePersonalEntry(user.getCode(), entry));
+        removeEntryReplyIndex(user, entry, key, "私人词条", e -> lexiconManager.removePersonalEntry(user.getCode(), entry));
     }
 
     private void removeEntryReply(XiaomingUser user, LexiconEntry entry, String key, String reply, String lexiconType, Consumer<LexiconEntry> onRemoveEntry) {
@@ -330,7 +374,7 @@ public class LexiconsProInteractors extends SimpleInteractors<LexiconsProPlugin>
                 user.sendMessage("成功删除" + lexiconType + "「" + key + "」中的唯一的随机回答「" + entry.getReplies().iterator().next() + "」。" +
                         "因其不再具备任何随机回答，整个词条也被一并删除");
                 onRemoveEntry.accept(entry);
-                getXiaomingBot().getFileSaver().readyToSave(manager);
+                getXiaomingBot().getFileSaver().readyToSave(lexiconManager);
             } else {
                 user.sendMessage("成功放弃本次删除行为");
             }
@@ -338,7 +382,7 @@ public class LexiconsProInteractors extends SimpleInteractors<LexiconsProPlugin>
         }
 
         entry.getReplies().remove(reply);
-        getXiaomingBot().getFileSaver().readyToSave(manager);
+        getXiaomingBot().getFileSaver().readyToSave(lexiconManager);
 
         if (entry.getReplies().isEmpty()) {
             onRemoveEntry.accept(entry);
@@ -359,7 +403,7 @@ public class LexiconsProInteractors extends SimpleInteractors<LexiconsProPlugin>
                 user.sendMessage("成功删除" + lexiconType + "「" + key + "」中的唯一的随机回答「" + entry.getReplies().iterator().next() + "」。" +
                         "因其不再具备任何随机回答，整个词条也被一并删除");
                 onRemoveEntry.accept(entry);
-                getXiaomingBot().getFileSaver().readyToSave(manager);
+                getXiaomingBot().getFileSaver().readyToSave(lexiconManager);
             } else {
                 user.sendMessage("成功放弃本次删除行为");
             }
@@ -371,68 +415,25 @@ public class LexiconsProInteractors extends SimpleInteractors<LexiconsProPlugin>
         user.sendMessage("成功删除" +lexiconType + "「" + key + "」中的随机回答「" + reply + "」。" +
                 "该词条还有 " + entry.getReplies().size() + " 个随机回答");
 
-        getXiaomingBot().getFileSaver().readyToSave(manager);
+        getXiaomingBot().getFileSaver().readyToSave(lexiconManager);
     }
 
     @NonNext
-    @WhenQuiet
-    @WhenExternal
-    @Filter(value = "", pattern = FilterPattern.START_EQUAL)
-    public boolean onMessage(XiaomingUser user, Message message) {
-        final String serializedMessage = message.serialize();
-        Container<LexiconEntry> entry = Container.empty();
+    @Filter(LexiconProWords.SAVE + LexiconProWords.LEXICON + LexiconProWords.CONFIGURE)
+    @Filter(LexiconProWords.WRITE + LexiconProWords.LEXICON + LexiconProWords.CONFIGURE)
+    @Required("lexicons.configuration.write")
+    public void writeConfiguration(XiaomingUser user) {
+        xiaomingBot.getFileSaver().readyToSave(configuration);
+        user.sendMessage("成功保存词库配置");
+    }
 
-        // 如果是群聊，是否开启了安静模式
-        boolean shouldQuiet = false;
-        if (user instanceof GroupXiaomingUser) {
-            shouldQuiet = ((GroupXiaomingUser) user).getContact().hasTag(getXiaomingBot().getConfiguration().getQuietModeGroupTag());
-        }
-
-        // 寻找匹配的词条
-        do {
-            // 先寻找私人词库
-            if (!shouldQuiet) {
-                final Optional<LexiconEntry> optionalEntry = manager.forPersonalEntry(user.getCode(), serializedMessage);
-                if (optionalEntry.isPresent()) {
-                    entry.setValue(optionalEntry.get());
-                    break;
-                }
-            }
-
-            // 寻找群聊词库
-            if (user instanceof GroupXiaomingUser) {
-                final GroupXiaomingUser groupXiaomingUser = (GroupXiaomingUser) user;
-
-                // 查找在所有 tag 群的词库
-                for (String tag : groupXiaomingUser.getContact().getTags()) {
-                    final Optional<LexiconEntry> optionalEntry = manager.forGroupEntry(tag, serializedMessage);
-                    if (optionalEntry.isPresent()) {
-                        entry.setValue(optionalEntry.get());
-                        break;
-                    }
-                }
-                if (entry.notNull()) {
-                    break;
-                }
-            }
-
-            // 寻找全局词库
-            manager.forGlobalEntry(serializedMessage).ifPresent(entry::setValue);
-        } while (false);
-
-        // 没有找到词条，不计入调用
-        if (entry.isEmpty()) {
-            return false;
-        } else if (Objects.nonNull(configuration.getInteractPermission()) && !user.hasPermission(configuration.getInteractPermission())) {
-            user.sendMessage("你还不能调用词条哦，因为你缺少权限：" + configuration.getInteractPermission());
-            return false;
-        }
-
-        // 判断回复是否为空
-        final String reply = entry.getValue().apply(serializedMessage).orElseThrow();
-
-        user.getContact().sendMessage(user.format(reply));
-        return true;
+    @NonNext
+    @Filter(LexiconProWords.SAVE + LexiconProWords.LEXICON)
+    @Filter(LexiconProWords.WRITE + LexiconProWords.LEXICON)
+    @Required("lexicons.data.write")
+    public void writeData(XiaomingUser user) {
+        xiaomingBot.getFileSaver().readyToSave(lexiconManager);
+        user.sendMessage("成功保存词库数据");
     }
 
     @NonNext
@@ -440,7 +441,7 @@ public class LexiconsProInteractors extends SimpleInteractors<LexiconsProPlugin>
     @Filter(LexiconProWords.NEW + LexiconProWords.GLOBAL + LexiconProWords.ENTRY + " {触发词} {r:回复}")
     @Filter(LexiconProWords.ADD + LexiconProWords.GLOBAL + LexiconProWords.EQUAL + LexiconProWords.ENTRY + " {触发词} {r:回复}")
     @Filter(LexiconProWords.NEW + LexiconProWords.GLOBAL + LexiconProWords.EQUAL + LexiconProWords.ENTRY + " {触发词} {r:回复}")
-    @Permission("lexicons.global.add")
+    @Required("lexicons.global.add")
     public void onAddGlobalEqualEntry(XiaomingUser user, @FilterParameter("触发词") String key, @FilterParameter("回复") String reply) {
         addGlobalEntry(user, LexiconMatchType.EQUAL, key, reply);
     }
@@ -448,7 +449,7 @@ public class LexiconsProInteractors extends SimpleInteractors<LexiconsProPlugin>
     @NonNext
     @Filter(LexiconProWords.ADD + LexiconProWords.GLOBAL + LexiconProWords.IGNORE_CASE + LexiconProWords.ENTRY + " {触发词} {r:回复}")
     @Filter(LexiconProWords.NEW + LexiconProWords.GLOBAL + LexiconProWords.IGNORE_CASE + LexiconProWords.ENTRY + " {触发词} {r:回复}")
-    @Permission("lexicons.global.add")
+    @Required("lexicons.global.add")
     public void onAddGlobalEqualIgnoreCaseEntry(XiaomingUser user, @FilterParameter("触发词") String key, @FilterParameter("回复") String reply) {
         addGlobalEntry(user, LexiconMatchType.EQUAL_IGNORE_CASE, key, reply);
     }
@@ -456,7 +457,7 @@ public class LexiconsProInteractors extends SimpleInteractors<LexiconsProPlugin>
     @NonNext
     @Filter(LexiconProWords.ADD + LexiconProWords.GLOBAL + LexiconProWords.START + LexiconProWords.EQUAL + LexiconProWords.ENTRY + " {触发词} {r:回复}")
     @Filter(LexiconProWords.NEW + LexiconProWords.GLOBAL + LexiconProWords.START + LexiconProWords.EQUAL + LexiconProWords.ENTRY + " {触发词} {r:回复}")
-    @Permission("lexicons.global.add")
+    @Required("lexicons.global.add")
     public void onAddGlobalStartEqualEntry(XiaomingUser user, @FilterParameter("触发词") String key, @FilterParameter("回复") String reply) {
         addGlobalEntry(user, LexiconMatchType.START_EQUAL, key, reply);
     }
@@ -464,7 +465,7 @@ public class LexiconsProInteractors extends SimpleInteractors<LexiconsProPlugin>
     @NonNext
     @Filter(LexiconProWords.ADD + LexiconProWords.GLOBAL + LexiconProWords.END + LexiconProWords.EQUAL + LexiconProWords.ENTRY + " {触发词} {r:回复}")
     @Filter(LexiconProWords.NEW + LexiconProWords.GLOBAL + LexiconProWords.END + LexiconProWords.EQUAL + LexiconProWords.ENTRY + " {触发词} {r:回复}")
-    @Permission("lexicons.global.add")
+    @Required("lexicons.global.add")
     public void onAddGlobalEndEqualEntry(XiaomingUser user, @FilterParameter("触发词") String key, @FilterParameter("回复") String reply) {
         addGlobalEntry(user, LexiconMatchType.END_EQUAL, key, reply);
     }
@@ -472,7 +473,7 @@ public class LexiconsProInteractors extends SimpleInteractors<LexiconsProPlugin>
     @NonNext
     @Filter(LexiconProWords.ADD + LexiconProWords.GLOBAL + LexiconProWords.MATCH + LexiconProWords.ENTRY + " {触发词} {r:回复}")
     @Filter(LexiconProWords.NEW + LexiconProWords.GLOBAL + LexiconProWords.MATCH + LexiconProWords.ENTRY + " {触发词} {r:回复}")
-    @Permission("lexicons.global.add")
+    @Required("lexicons.global.add")
     public void onAddGlobalMatchEntry(XiaomingUser user, @FilterParameter("触发词") String key, @FilterParameter("回复") String reply) {
         if (!MiraiCodeUtil.getImages(key).isEmpty()) {
             user.sendError("有关正则表达式的匹配规则中不能包含图片");
@@ -488,7 +489,7 @@ public class LexiconsProInteractors extends SimpleInteractors<LexiconsProPlugin>
     @NonNext
     @Filter(LexiconProWords.ADD + LexiconProWords.GLOBAL + LexiconProWords.START + LexiconProWords.MATCH + LexiconProWords.ENTRY + " {触发词} {r:回复}")
     @Filter(LexiconProWords.NEW + LexiconProWords.GLOBAL + LexiconProWords.START + LexiconProWords.MATCH + LexiconProWords.ENTRY + " {触发词} {r:回复}")
-    @Permission("lexicons.global.add")
+    @Required("lexicons.global.add")
     public void onAddGlobalStartMatchEntry(XiaomingUser user, @FilterParameter("触发词") String key, @FilterParameter("回复") String reply) {
         if (!MiraiCodeUtil.getImages(key).isEmpty()) {
             user.sendError("有关正则表达式的匹配规则中不能包含图片");
@@ -504,7 +505,7 @@ public class LexiconsProInteractors extends SimpleInteractors<LexiconsProPlugin>
     @NonNext
     @Filter(LexiconProWords.ADD + LexiconProWords.GLOBAL + LexiconProWords.END + LexiconProWords.MATCH + LexiconProWords.ENTRY + " {触发词} {r:回复}")
     @Filter(LexiconProWords.NEW + LexiconProWords.GLOBAL + LexiconProWords.END + LexiconProWords.MATCH + LexiconProWords.ENTRY + " {触发词} {r:回复}")
-    @Permission("lexicons.global.add")
+    @Required("lexicons.global.add")
     public void onAddGlobalEndMatchEntry(XiaomingUser user, @FilterParameter("触发词") String key, @FilterParameter("回复") String reply) {
         if (!MiraiCodeUtil.getImages(key).isEmpty()) {
             user.sendError("有关正则表达式的匹配规则中不能包含图片");
@@ -520,7 +521,7 @@ public class LexiconsProInteractors extends SimpleInteractors<LexiconsProPlugin>
     @NonNext
     @Filter(LexiconProWords.ADD + LexiconProWords.GLOBAL + LexiconProWords.PARAMETER + LexiconProWords.ENTRY + " {触发词} {r:回复}")
     @Filter(LexiconProWords.NEW + LexiconProWords.GLOBAL + LexiconProWords.PARAMETER + LexiconProWords.ENTRY + " {触发词} {r:回复}")
-    @Permission("lexicons.global.add")
+    @Required("lexicons.global.add")
     public void onAddGlobalParameterEntry(XiaomingUser user, @FilterParameter("触发词") String key, @FilterParameter("回复") String reply) {
         if (!MiraiCodeUtil.getImages(key).isEmpty()) {
             user.sendError("有关参数的匹配规则中不能包含图片");
@@ -538,7 +539,7 @@ public class LexiconsProInteractors extends SimpleInteractors<LexiconsProPlugin>
     @Filter(LexiconProWords.NEW + LexiconProWords.GLOBAL + LexiconProWords.CONTAIN + LexiconProWords.ENTRY + " {触发词} {r:回复}")
     @Filter(LexiconProWords.ADD + LexiconProWords.GLOBAL + LexiconProWords.CONTAIN + LexiconProWords.EQUAL + LexiconProWords.ENTRY + " {触发词} {r:回复}")
     @Filter(LexiconProWords.NEW + LexiconProWords.GLOBAL + LexiconProWords.CONTAIN + LexiconProWords.EQUAL + LexiconProWords.ENTRY + " {触发词} {r:回复}")
-    @Permission("lexicons.global.add")
+    @Required("lexicons.global.add")
     public void onAddGlobalContainEqualEntry(XiaomingUser user, @FilterParameter("触发词") String key, @FilterParameter("回复") String reply) {
         addGlobalEntry(user, LexiconMatchType.CONTAIN_EQUAL, key, reply);
     }
@@ -546,7 +547,7 @@ public class LexiconsProInteractors extends SimpleInteractors<LexiconsProPlugin>
     @NonNext
     @Filter(LexiconProWords.ADD + LexiconProWords.GLOBAL + LexiconProWords.CONTAIN + LexiconProWords.MATCH + LexiconProWords.ENTRY + " {触发词} {r:回复}")
     @Filter(LexiconProWords.NEW + LexiconProWords.GLOBAL + LexiconProWords.CONTAIN + LexiconProWords.MATCH + LexiconProWords.ENTRY + " {触发词} {r:回复}")
-    @Permission("lexicons.global.add")
+    @Required("lexicons.global.add")
     public void onAddGlobalContainMatchEntry(XiaomingUser user, @FilterParameter("触发词") String key, @FilterParameter("回复") String reply) {
         if (!MiraiCodeUtil.getImages(key).isEmpty()) {
             user.sendError("有关正则表达式的匹配规则中不能包含图片");
@@ -560,18 +561,18 @@ public class LexiconsProInteractors extends SimpleInteractors<LexiconsProPlugin>
     }
 
     @NonNext
-    @Filter(LexiconProWords.GLOBAL + LexiconProWords.ENTRY + " {globalEntry}")
-    @Permission("lexicons.global.look")
-    public void onLookGlobalEntry(XiaomingUser user, @FilterParameter("globalEntry") LexiconEntry entry) {
+    @Filter(LexiconProWords.GLOBAL + LexiconProWords.ENTRY + " {全局词条}")
+    @Required("lexicons.global.look")
+    public void onLookGlobalEntry(XiaomingUser user, @FilterParameter("全局词条") LexiconEntry entry) {
         user.sendMessage("【全局词条详情】：\n" + entry);
     }
 
     @NonNext
     @Filter(LexiconProWords.GLOBAL + LexiconProWords.ENTRY)
     @Filter(LexiconProWords.GLOBAL + LexiconProWords.LEXICON)
-    @Permission("lexicons.global.list")
+    @Required("lexicons.global.list")
     public void onListGlobalEntry(XiaomingUser user) {
-        final Set<LexiconEntry> globalEntries = manager.getGlobalEntries();
+        final Set<LexiconEntry> globalEntries = lexiconManager.getGlobalEntries();
         if (CollectionUtil.isEmpty(globalEntries)) {
             user.sendWarning("没有任何全局词条");
         } else {
@@ -581,37 +582,37 @@ public class LexiconsProInteractors extends SimpleInteractors<LexiconsProPlugin>
     }
 
     @NonNext
-    @Filter(LexiconProWords.REMOVE + LexiconProWords.GLOBAL + LexiconProWords.ENTRY + " {globalEntry}")
-    @Permission("lexicons.global.remove")
-    public void onRemoveGlobalEntry(XiaomingUser user, @FilterParameter("globalEntry") LexiconEntry entry, @FilterParameter("globalEntry") String key) {
+    @Filter(LexiconProWords.REMOVE + LexiconProWords.GLOBAL + LexiconProWords.ENTRY + " {全局词条}")
+    @Required("lexicons.global.remove")
+    public void onRemoveGlobalEntry(XiaomingUser user, @FilterParameter("全局词条") LexiconEntry entry, @FilterParameter("全局词条") String key) {
         removeGlobalEntry(user, entry, key);
     }
 
     @NonNext
-    @Filter(LexiconProWords.REMOVE + LexiconProWords.GLOBAL + LexiconProWords.ENTRY + LexiconProWords.RULE + " {globalEntry}")
-    @Permission("lexicons.global.remove")
-    public void onRemoveGlobalEntryRule(XiaomingUser user, @FilterParameter("globalEntry") LexiconEntry entry) {
+    @Filter(LexiconProWords.REMOVE + LexiconProWords.GLOBAL + LexiconProWords.ENTRY + LexiconProWords.RULE + " {全局词条}")
+    @Required("lexicons.global.remove")
+    public void onRemoveGlobalEntryRule(XiaomingUser user, @FilterParameter("全局词条") LexiconEntry entry) {
         removeGlobalEntryRule(user, entry);
     }
 
     @NonNext
-    @Filter(LexiconProWords.REMOVE + LexiconProWords.GLOBAL + LexiconProWords.ENTRY + LexiconProWords.REPLY + " {globalEntry} {r:回复}")
-    @Permission("lexicons.global.remove")
-    public void onRemoveGlobalEntryReply(XiaomingUser user, @FilterParameter("globalEntry") LexiconEntry entry, @FilterParameter("globalEntry") String key, @FilterParameter("回复") String reply) {
+    @Filter(LexiconProWords.REMOVE + LexiconProWords.GLOBAL + LexiconProWords.ENTRY + LexiconProWords.REPLY + " {全局词条} {r:回复}")
+    @Required("lexicons.global.remove")
+    public void onRemoveGlobalEntryReply(XiaomingUser user, @FilterParameter("全局词条") LexiconEntry entry, @FilterParameter("全局词条") String key, @FilterParameter("回复") String reply) {
         removeGlobalEntryReply(user, entry, key, reply);
     }
 
     @NonNext
-    @Filter(LexiconProWords.REMOVE + LexiconProWords.GLOBAL + LexiconProWords.ENTRY + LexiconProWords.REPLY + " {globalEntry}")
-    @Permission("lexicons.global.remove")
-    public void onRemoveGlobalEntryReplyIndex(XiaomingUser user, @FilterParameter("globalEntry") LexiconEntry entry, @FilterParameter("globalEntry") String key) {
+    @Filter(LexiconProWords.REMOVE + LexiconProWords.GLOBAL + LexiconProWords.ENTRY + LexiconProWords.REPLY + " {全局词条}")
+    @Required("lexicons.global.remove")
+    public void onRemoveGlobalEntryReplyIndex(XiaomingUser user, @FilterParameter("全局词条") LexiconEntry entry, @FilterParameter("全局词条") String key) {
         removeGlobalEntryReplyIndex(user, entry, key);
     }
 
     @NonNext
     @Filter(LexiconProWords.ADD + LexiconProWords.GLOBAL + LexiconProWords.ENTRY + LexiconProWords.REPLY + " {触发词} {r:回复}")
     @Filter(LexiconProWords.NEW + LexiconProWords.GLOBAL + LexiconProWords.ENTRY + LexiconProWords.REPLY + " {触发词} {r:回复}")
-    @Permission("lexicons.global.add")
+    @Required("lexicons.global.add")
     public void onAddGlobalEntryReply(XiaomingUser user, @FilterParameter("触发词") String key, @FilterParameter("回复") String reply) {
         addGlobalEntryReply(user, key, reply);
     }
@@ -619,18 +620,18 @@ public class LexiconsProInteractors extends SimpleInteractors<LexiconsProPlugin>
     @NonNext
     @Filter(LexiconProWords.BATCH + LexiconProWords.ADD + LexiconProWords.GLOBAL + LexiconProWords.ENTRY + LexiconProWords.REPLY + " {触发词}")
     @Filter(LexiconProWords.BATCH + LexiconProWords.NEW + LexiconProWords.GLOBAL + LexiconProWords.ENTRY + LexiconProWords.REPLY + " {触发词}")
-    @Permission("lexicons.global.add")
+    @Required("lexicons.global.add")
     public void onAddGlobalEntryReplyOneByOne(XiaomingUser user, @FilterParameter("触发词") String key) {
         addGlobalEntryReplyOneByOne(user, key);
     }
 
     @NonNext
-    @Filter(LexiconProWords.ADD + LexiconProWords.GLOBAL + LexiconProWords.ENTRY + LexiconProWords.IMAGE + LexiconProWords.REPLY + " {globalEntry} {r:回复}")
-    @Filter(LexiconProWords.NEW + LexiconProWords.GLOBAL + LexiconProWords.ENTRY + LexiconProWords.IMAGE + LexiconProWords.REPLY + " {globalEntry} {r:回复}")
-    @Permission("lexicons.global.add")
+    @Filter(LexiconProWords.ADD + LexiconProWords.GLOBAL + LexiconProWords.ENTRY + LexiconProWords.IMAGE + LexiconProWords.REPLY + " {全局词条} {r:回复}")
+    @Filter(LexiconProWords.NEW + LexiconProWords.GLOBAL + LexiconProWords.ENTRY + LexiconProWords.IMAGE + LexiconProWords.REPLY + " {全局词条} {r:回复}")
+    @Required("lexicons.global.add")
     public void onAddGlobalEntryImageReply(XiaomingUser user,
-                                           @FilterParameter("globalEntry") String key,
-                                           @FilterParameter("globalEntry") LexiconEntry entry,
+                                           @FilterParameter("全局词条") String key,
+                                           @FilterParameter("全局词条") LexiconEntry entry,
                                            @FilterParameter("回复") String reply) {
         addGlobalEntryImageReply(user, entry, key, reply);
     }
@@ -638,7 +639,7 @@ public class LexiconsProInteractors extends SimpleInteractors<LexiconsProPlugin>
     @NonNext
     @Filter(LexiconProWords.ADD + LexiconProWords.PERSONAL + LexiconProWords.ENTRY + LexiconProWords.IMAGE + LexiconProWords.REPLY + " {私人词条} {r:回复}")
     @Filter(LexiconProWords.NEW + LexiconProWords.PERSONAL + LexiconProWords.ENTRY + LexiconProWords.IMAGE + LexiconProWords.REPLY + " {私人词条} {r:回复}")
-    @Permission("lexicons.personal.add")
+    @Required("lexicons.personal.add")
     public void onAddPersonalEntryImageReply(XiaomingUser user,
                                            @FilterParameter("私人词条") String key,
                                            @FilterParameter("私人词条") LexiconEntry entry,
@@ -651,7 +652,7 @@ public class LexiconsProInteractors extends SimpleInteractors<LexiconsProPlugin>
     @Filter(LexiconProWords.NEW + LexiconProWords.PERSONAL + LexiconProWords.ENTRY + " {触发词} {r:回复}")
     @Filter(LexiconProWords.ADD + LexiconProWords.PERSONAL + LexiconProWords.EQUAL + LexiconProWords.ENTRY + " {触发词} {r:回复}")
     @Filter(LexiconProWords.NEW + LexiconProWords.PERSONAL + LexiconProWords.EQUAL + LexiconProWords.ENTRY + " {触发词} {r:回复}")
-    @Permission("lexicons.personal.add")
+    @Required("lexicons.personal.add")
     public void onAddPersonalEqualEntry(XiaomingUser user, @FilterParameter("触发词") String key, @FilterParameter("回复") String reply) {
         addPersonalEntry(user, LexiconMatchType.EQUAL, key, reply);
     }
@@ -659,7 +660,7 @@ public class LexiconsProInteractors extends SimpleInteractors<LexiconsProPlugin>
     @NonNext
     @Filter(LexiconProWords.ADD + LexiconProWords.PERSONAL + LexiconProWords.IGNORE_CASE + LexiconProWords.ENTRY + " {触发词} {r:回复}")
     @Filter(LexiconProWords.NEW + LexiconProWords.PERSONAL + LexiconProWords.IGNORE_CASE + LexiconProWords.ENTRY + " {触发词} {r:回复}")
-    @Permission("lexicons.personal.add")
+    @Required("lexicons.personal.add")
     public void onAddPersonalEqualIgnoreCaseEntry(XiaomingUser user, @FilterParameter("触发词") String key, @FilterParameter("回复") String reply) {
         addPersonalEntry(user, LexiconMatchType.EQUAL_IGNORE_CASE, key, reply);
     }
@@ -667,7 +668,7 @@ public class LexiconsProInteractors extends SimpleInteractors<LexiconsProPlugin>
     @NonNext
     @Filter(LexiconProWords.ADD + LexiconProWords.PERSONAL + LexiconProWords.START + LexiconProWords.EQUAL + LexiconProWords.ENTRY + " {触发词} {r:回复}")
     @Filter(LexiconProWords.NEW + LexiconProWords.PERSONAL + LexiconProWords.START + LexiconProWords.EQUAL + LexiconProWords.ENTRY + " {触发词} {r:回复}")
-    @Permission("lexicons.personal.add")
+    @Required("lexicons.personal.add")
     public void onAddPersonalStartEqualEntry(XiaomingUser user, @FilterParameter("触发词") String key, @FilterParameter("回复") String reply) {
         addPersonalEntry(user, LexiconMatchType.START_EQUAL, key, reply);
     }
@@ -675,7 +676,7 @@ public class LexiconsProInteractors extends SimpleInteractors<LexiconsProPlugin>
     @NonNext
     @Filter(LexiconProWords.ADD + LexiconProWords.PERSONAL + LexiconProWords.END + LexiconProWords.EQUAL + LexiconProWords.ENTRY + " {触发词} {r:回复}")
     @Filter(LexiconProWords.NEW + LexiconProWords.PERSONAL + LexiconProWords.END + LexiconProWords.EQUAL + LexiconProWords.ENTRY + " {触发词} {r:回复}")
-    @Permission("lexicons.personal.add")
+    @Required("lexicons.personal.add")
     public void onAddPersonalEndEqualEntry(XiaomingUser user, @FilterParameter("触发词") String key, @FilterParameter("回复") String reply) {
         addPersonalEntry(user, LexiconMatchType.END_EQUAL, key, reply);
     }
@@ -683,7 +684,7 @@ public class LexiconsProInteractors extends SimpleInteractors<LexiconsProPlugin>
     @NonNext
     @Filter(LexiconProWords.ADD + LexiconProWords.PERSONAL + LexiconProWords.MATCH + LexiconProWords.ENTRY + " {触发词} {r:回复}")
     @Filter(LexiconProWords.NEW + LexiconProWords.PERSONAL + LexiconProWords.MATCH + LexiconProWords.ENTRY + " {触发词} {r:回复}")
-    @Permission("lexicons.personal.add")
+    @Required("lexicons.personal.add")
     public void onAddPersonalMatchEntry(XiaomingUser user, @FilterParameter("触发词") String key, @FilterParameter("回复") String reply) {
         if (!MiraiCodeUtil.getImages(key).isEmpty()) {
             user.sendError("有关正则表达式的匹配规则中不能包含图片");
@@ -699,7 +700,7 @@ public class LexiconsProInteractors extends SimpleInteractors<LexiconsProPlugin>
     @NonNext
     @Filter(LexiconProWords.ADD + LexiconProWords.PERSONAL + LexiconProWords.START + LexiconProWords.MATCH + LexiconProWords.ENTRY + " {触发词} {r:回复}")
     @Filter(LexiconProWords.NEW + LexiconProWords.PERSONAL + LexiconProWords.START + LexiconProWords.MATCH + LexiconProWords.ENTRY + " {触发词} {r:回复}")
-    @Permission("lexicons.personal.add")
+    @Required("lexicons.personal.add")
     public void onAddPersonalStartMatchEntry(XiaomingUser user, @FilterParameter("触发词") String key, @FilterParameter("回复") String reply) {
         if (!MiraiCodeUtil.getImages(key).isEmpty()) {
             user.sendError("有关正则表达式的匹配规则中不能包含图片");
@@ -715,7 +716,7 @@ public class LexiconsProInteractors extends SimpleInteractors<LexiconsProPlugin>
     @NonNext
     @Filter(LexiconProWords.ADD + LexiconProWords.PERSONAL + LexiconProWords.END + LexiconProWords.MATCH + LexiconProWords.ENTRY + " {触发词} {r:回复}")
     @Filter(LexiconProWords.NEW + LexiconProWords.PERSONAL + LexiconProWords.END + LexiconProWords.MATCH + LexiconProWords.ENTRY + " {触发词} {r:回复}")
-    @Permission("lexicons.personal.add")
+    @Required("lexicons.personal.add")
     public void onAddPersonalEndMatchEntry(XiaomingUser user, @FilterParameter("触发词") String key, @FilterParameter("回复") String reply) {
         if (!MiraiCodeUtil.getImages(key).isEmpty()) {
             user.sendError("有关正则表达式的匹配规则中不能包含图片");
@@ -731,7 +732,7 @@ public class LexiconsProInteractors extends SimpleInteractors<LexiconsProPlugin>
     @NonNext
     @Filter(LexiconProWords.ADD + LexiconProWords.PERSONAL + LexiconProWords.PARAMETER + LexiconProWords.ENTRY + " {触发词} {r:回复}")
     @Filter(LexiconProWords.NEW + LexiconProWords.PERSONAL + LexiconProWords.PARAMETER + LexiconProWords.ENTRY + " {触发词} {r:回复}")
-    @Permission("lexicons.personal.add")
+    @Required("lexicons.personal.add")
     public void onAddPersonalParameterEntry(XiaomingUser user, @FilterParameter("触发词") String key, @FilterParameter("回复") String reply) {
         if (!MiraiCodeUtil.getImages(key).isEmpty()) {
             user.sendError("有关参数的匹配规则中不能包含图片");
@@ -749,7 +750,7 @@ public class LexiconsProInteractors extends SimpleInteractors<LexiconsProPlugin>
     @Filter(LexiconProWords.NEW + LexiconProWords.PERSONAL + LexiconProWords.CONTAIN + LexiconProWords.ENTRY + " {触发词} {r:回复}")
     @Filter(LexiconProWords.ADD + LexiconProWords.PERSONAL + LexiconProWords.CONTAIN + LexiconProWords.EQUAL + LexiconProWords.ENTRY + " {触发词} {r:回复}")
     @Filter(LexiconProWords.NEW + LexiconProWords.PERSONAL + LexiconProWords.CONTAIN + LexiconProWords.EQUAL + LexiconProWords.ENTRY + " {触发词} {r:回复}")
-    @Permission("lexicons.personal.add")
+    @Required("lexicons.personal.add")
     public void onAddPersonalContainEqualEntry(XiaomingUser user, @FilterParameter("触发词") String key, @FilterParameter("回复") String reply) {
         addPersonalEntry(user, LexiconMatchType.CONTAIN_EQUAL, key, reply);
     }
@@ -757,7 +758,7 @@ public class LexiconsProInteractors extends SimpleInteractors<LexiconsProPlugin>
     @NonNext
     @Filter(LexiconProWords.ADD + LexiconProWords.PERSONAL + LexiconProWords.CONTAIN + LexiconProWords.MATCH + LexiconProWords.ENTRY + " {触发词} {r:回复}")
     @Filter(LexiconProWords.NEW + LexiconProWords.PERSONAL + LexiconProWords.CONTAIN + LexiconProWords.MATCH + LexiconProWords.ENTRY + " {触发词} {r:回复}")
-    @Permission("lexicons.personal.add")
+    @Required("lexicons.personal.add")
     public void onAddPersonalContainMatchEntry(XiaomingUser user, @FilterParameter("触发词") String key, @FilterParameter("回复") String reply) {
         if (!MiraiCodeUtil.getImages(key).isEmpty()) {
             user.sendError("有关正则表达式的匹配规则中不能包含图片");
@@ -772,7 +773,7 @@ public class LexiconsProInteractors extends SimpleInteractors<LexiconsProPlugin>
 
     @NonNext
     @Filter(LexiconProWords.PERSONAL + LexiconProWords.ENTRY + " {私人词条}")
-    @Permission("lexicons.personal.look")
+    @Required("lexicons.personal.look")
     public void onLookPersonalEntry(XiaomingUser user, @FilterParameter("私人词条") LexiconEntry entry) {
         user.sendMessage("【私人词条详情】：\n" + entry);
     }
@@ -780,9 +781,9 @@ public class LexiconsProInteractors extends SimpleInteractors<LexiconsProPlugin>
     @NonNext
     @Filter(LexiconProWords.PERSONAL + LexiconProWords.ENTRY)
     @Filter(LexiconProWords.PERSONAL + LexiconProWords.LEXICON)
-    @Permission("lexicons.personal.list")
+    @Required("lexicons.personal.list")
     public void onListPersonalEntry(XiaomingUser user) {
-        final Set<LexiconEntry> personalEntries = manager.forPersonalEntries(user.getCode());
+        final Set<LexiconEntry> personalEntries = lexiconManager.forPersonalEntries(user.getCode());
         if (CollectionUtil.isEmpty(personalEntries)) {
             user.sendWarning("没有任何私人词条");
         } else {
@@ -793,28 +794,28 @@ public class LexiconsProInteractors extends SimpleInteractors<LexiconsProPlugin>
 
     @NonNext
     @Filter(LexiconProWords.REMOVE + LexiconProWords.PERSONAL + LexiconProWords.ENTRY + " {私人词条}")
-    @Permission("lexicons.personal.remove")
+    @Required("lexicons.personal.remove")
     public void onRemovePersonalEntry(XiaomingUser user, @FilterParameter("私人词条") LexiconEntry entry, @FilterParameter("私人词条") String key) {
         removePersonalEntry(user, entry, key);
     }
 
     @NonNext
     @Filter(LexiconProWords.REMOVE + LexiconProWords.PERSONAL + LexiconProWords.ENTRY + LexiconProWords.RULE + " {私人词条}")
-    @Permission("lexicons.personal.remove")
+    @Required("lexicons.personal.remove")
     public void onRemovePersonalEntryRule(XiaomingUser user, @FilterParameter("私人词条") LexiconEntry entry) {
         removePersonalEntryRule(user, entry);
     }
 
     @NonNext
     @Filter(LexiconProWords.REMOVE + LexiconProWords.PERSONAL + LexiconProWords.ENTRY + LexiconProWords.REPLY + " {私人词条} {r:回复}")
-    @Permission("lexicons.personal.remove")
+    @Required("lexicons.personal.remove")
     public void onRemovePersonalEntryReply(XiaomingUser user, @FilterParameter("私人词条") LexiconEntry entry, @FilterParameter("私人词条") String key, @FilterParameter("回复") String reply) {
         removePersonalEntryReply(user, entry, key, reply);
     }
 
     @NonNext
     @Filter(LexiconProWords.REMOVE + LexiconProWords.PERSONAL + LexiconProWords.ENTRY + LexiconProWords.REPLY + " {私人词条}")
-    @Permission("lexicons.personal.remove")
+    @Required("lexicons.personal.remove")
     public void onRemovePersonalEntryReplyIndex(XiaomingUser user, @FilterParameter("私人词条") LexiconEntry entry, @FilterParameter("私人词条") String key) {
         removePersonalEntryReplyIndex(user, entry, key);
     }
@@ -822,7 +823,7 @@ public class LexiconsProInteractors extends SimpleInteractors<LexiconsProPlugin>
     @NonNext
     @Filter(LexiconProWords.ADD + LexiconProWords.PERSONAL + LexiconProWords.ENTRY + LexiconProWords.REPLY + " {触发词} {r:回复}")
     @Filter(LexiconProWords.NEW + LexiconProWords.PERSONAL + LexiconProWords.ENTRY + LexiconProWords.REPLY + " {触发词} {r:回复}")
-    @Permission("lexicons.personal.add")
+    @Required("lexicons.personal.add")
     public void onAddPersonalEntryReply(XiaomingUser user, @FilterParameter("触发词") String key, @FilterParameter("回复") String reply) {
         addPersonalEntryReply(user, key, reply);
     }
@@ -830,7 +831,7 @@ public class LexiconsProInteractors extends SimpleInteractors<LexiconsProPlugin>
     @NonNext
     @Filter(LexiconProWords.BATCH + LexiconProWords.ADD + LexiconProWords.PERSONAL + LexiconProWords.ENTRY + LexiconProWords.REPLY + " {触发词}")
     @Filter(LexiconProWords.BATCH + LexiconProWords.NEW + LexiconProWords.PERSONAL + LexiconProWords.ENTRY + LexiconProWords.REPLY + " {触发词}")
-    @Permission("lexicons.personal.add")
+    @Required("lexicons.personal.add")
     public void onAddPersonalEntryReplyOneByOne(XiaomingUser user, @FilterParameter("触发词") String key) {
         addPersonalEntryReplyOneByOne(user, key);
     }
@@ -838,7 +839,7 @@ public class LexiconsProInteractors extends SimpleInteractors<LexiconsProPlugin>
     @NonNext
     @Filter(LexiconProWords.ADD + LexiconProWords.GROUP + LexiconProWords.ENTRY + LexiconProWords.IMAGE + LexiconProWords.REPLY + " {群标签} {群词条} {r:回复}")
     @Filter(LexiconProWords.NEW + LexiconProWords.GROUP + LexiconProWords.ENTRY + LexiconProWords.IMAGE + LexiconProWords.REPLY + " {群标签} {群词条} {r:回复}")
-    @Permission("lexicons.group.{args.群标签}.add")
+    @Required("lexicons.group.{args.群标签}.add")
     public void onAddGroupEntryImageReply(XiaomingUser user,
                                              @FilterParameter("群词条") String key,
                                              @FilterParameter("群词条") LexiconEntry entry,
@@ -851,7 +852,7 @@ public class LexiconsProInteractors extends SimpleInteractors<LexiconsProPlugin>
     @Filter(LexiconProWords.NEW + LexiconProWords.GROUP + LexiconProWords.ENTRY + " {群标签} {触发词} {r:回复}")
     @Filter(LexiconProWords.ADD + LexiconProWords.GROUP + LexiconProWords.EQUAL + LexiconProWords.ENTRY + " {群标签} {触发词} {r:回复}")
     @Filter(LexiconProWords.NEW + LexiconProWords.GROUP + LexiconProWords.EQUAL + LexiconProWords.ENTRY + " {群标签} {触发词} {r:回复}")
-    @Permission("lexicons.group.{args.群标签}.add")
+    @Required("lexicons.group.{args.群标签}.add")
     public void onAddGroupEqualEntry(XiaomingUser user, @FilterParameter("触发词") String key, @FilterParameter("群标签") String groupTag, @FilterParameter("回复") String reply) {
         addGroupEntry(user, groupTag, LexiconMatchType.EQUAL, key, reply);
     }
@@ -859,7 +860,7 @@ public class LexiconsProInteractors extends SimpleInteractors<LexiconsProPlugin>
     @NonNext
     @Filter(LexiconProWords.ADD + LexiconProWords.GROUP + LexiconProWords.START + LexiconProWords.EQUAL + LexiconProWords.ENTRY + " {群标签} {触发词} {r:回复}")
     @Filter(LexiconProWords.NEW + LexiconProWords.GROUP + LexiconProWords.START + LexiconProWords.EQUAL + LexiconProWords.ENTRY + " {群标签} {触发词} {r:回复}")
-    @Permission("lexicons.group.{args.群标签}.add")
+    @Required("lexicons.group.{args.群标签}.add")
     public void onAddGroupStartEqualEntry(XiaomingUser user, @FilterParameter("触发词") String key, @FilterParameter("群标签") String groupTag, @FilterParameter("回复") String reply) {
         addGroupEntry(user, groupTag, LexiconMatchType.START_EQUAL, key, reply);
     }
@@ -867,7 +868,7 @@ public class LexiconsProInteractors extends SimpleInteractors<LexiconsProPlugin>
     @NonNext
     @Filter(LexiconProWords.ADD + LexiconProWords.GROUP + LexiconProWords.END + LexiconProWords.EQUAL + LexiconProWords.ENTRY + " {群标签} {触发词} {r:回复}")
     @Filter(LexiconProWords.NEW + LexiconProWords.GROUP + LexiconProWords.END + LexiconProWords.EQUAL + LexiconProWords.ENTRY + " {群标签} {触发词} {r:回复}")
-    @Permission("lexicons.group.{args.群标签}.add")
+    @Required("lexicons.group.{args.群标签}.add")
     public void onAddGroupEndEqualEntry(XiaomingUser user, @FilterParameter("触发词") String key, @FilterParameter("群标签") String groupTag, @FilterParameter("回复") String reply) {
         addGroupEntry(user, groupTag, LexiconMatchType.END_EQUAL, key, reply);
     }
@@ -875,7 +876,7 @@ public class LexiconsProInteractors extends SimpleInteractors<LexiconsProPlugin>
     @NonNext
     @Filter(LexiconProWords.ADD + LexiconProWords.GROUP + LexiconProWords.MATCH + LexiconProWords.ENTRY + " {群标签} {触发词} {r:回复}")
     @Filter(LexiconProWords.NEW + LexiconProWords.GROUP + LexiconProWords.MATCH + LexiconProWords.ENTRY + " {群标签} {触发词} {r:回复}")
-    @Permission("lexicons.group.{args.群标签}.add")
+    @Required("lexicons.group.{args.群标签}.add")
     public void onAddGroupMatchEntry(XiaomingUser user, @FilterParameter("触发词") String key, @FilterParameter("群标签") String groupTag, @FilterParameter("回复") String reply) {
         if (!MiraiCodeUtil.getImages(key).isEmpty()) {
             user.sendError("有关正则表达式的匹配规则中不能包含图片");
@@ -891,7 +892,7 @@ public class LexiconsProInteractors extends SimpleInteractors<LexiconsProPlugin>
     @NonNext
     @Filter(LexiconProWords.ADD + LexiconProWords.GROUP + LexiconProWords.START + LexiconProWords.MATCH + LexiconProWords.ENTRY + " {群标签} {触发词} {r:回复}")
     @Filter(LexiconProWords.NEW + LexiconProWords.GROUP + LexiconProWords.START + LexiconProWords.MATCH + LexiconProWords.ENTRY + " {群标签} {触发词} {r:回复}")
-    @Permission("lexicons.group.{args.群标签}.add")
+    @Required("lexicons.group.{args.群标签}.add")
     public void onAddGroupStartMatchEntry(XiaomingUser user, @FilterParameter("触发词") String key, @FilterParameter("群标签") String groupTag, @FilterParameter("回复") String reply) {
         if (!MiraiCodeUtil.getImages(key).isEmpty()) {
             user.sendError("有关正则表达式的匹配规则中不能包含图片");
@@ -907,7 +908,7 @@ public class LexiconsProInteractors extends SimpleInteractors<LexiconsProPlugin>
     @NonNext
     @Filter(LexiconProWords.ADD + LexiconProWords.GROUP + LexiconProWords.END + LexiconProWords.MATCH + LexiconProWords.ENTRY + " {群标签} {触发词} {r:回复}")
     @Filter(LexiconProWords.NEW + LexiconProWords.GROUP + LexiconProWords.END + LexiconProWords.MATCH + LexiconProWords.ENTRY + " {群标签} {触发词} {r:回复}")
-    @Permission("lexicons.group.{args.群标签}.add")
+    @Required("lexicons.group.{args.群标签}.add")
     public void onAddGroupEndMatchEntry(XiaomingUser user, @FilterParameter("触发词") String key, @FilterParameter("群标签") String groupTag, @FilterParameter("回复") String reply) {
         if (!MiraiCodeUtil.getImages(key).isEmpty()) {
             user.sendError("有关正则表达式的匹配规则中不能包含图片");
@@ -923,7 +924,7 @@ public class LexiconsProInteractors extends SimpleInteractors<LexiconsProPlugin>
     @NonNext
     @Filter(LexiconProWords.ADD + LexiconProWords.GROUP + LexiconProWords.PARAMETER + LexiconProWords.ENTRY + " {群标签} {触发词} {r:回复}")
     @Filter(LexiconProWords.NEW + LexiconProWords.GROUP + LexiconProWords.PARAMETER + LexiconProWords.ENTRY + " {群标签} {触发词} {r:回复}")
-    @Permission("lexicons.group.{args.群标签}.add")
+    @Required("lexicons.group.{args.群标签}.add")
     public void onAddGroupParameterEntry(XiaomingUser user, @FilterParameter("触发词") String key, @FilterParameter("群标签") String groupTag, @FilterParameter("回复") String reply) {
         if (!MiraiCodeUtil.getImages(key).isEmpty()) {
             user.sendError("有关参数的匹配规则中不能包含图片");
@@ -941,7 +942,7 @@ public class LexiconsProInteractors extends SimpleInteractors<LexiconsProPlugin>
     @Filter(LexiconProWords.NEW + LexiconProWords.GROUP + LexiconProWords.CONTAIN + LexiconProWords.ENTRY + " {群标签} {触发词} {r:回复}")
     @Filter(LexiconProWords.ADD + LexiconProWords.GROUP + LexiconProWords.CONTAIN + LexiconProWords.EQUAL + LexiconProWords.ENTRY + " {群标签} {触发词} {r:回复}")
     @Filter(LexiconProWords.NEW + LexiconProWords.GROUP + LexiconProWords.CONTAIN + LexiconProWords.EQUAL + LexiconProWords.ENTRY + " {群标签} {触发词} {r:回复}")
-    @Permission("lexicons.group.{args.群标签}.add")
+    @Required("lexicons.group.{args.群标签}.add")
     public void onAddGroupContainEqualEntry(XiaomingUser user, @FilterParameter("触发词") String key, @FilterParameter("群标签") String groupTag, @FilterParameter("回复") String reply) {
         addGroupEntry(user, groupTag, LexiconMatchType.CONTAIN_EQUAL, key, reply);
     }
@@ -949,7 +950,7 @@ public class LexiconsProInteractors extends SimpleInteractors<LexiconsProPlugin>
     @NonNext
     @Filter(LexiconProWords.ADD + LexiconProWords.GROUP + LexiconProWords.CONTAIN + LexiconProWords.MATCH + LexiconProWords.ENTRY + " {群标签} {触发词} {r:回复}")
     @Filter(LexiconProWords.NEW + LexiconProWords.GROUP + LexiconProWords.CONTAIN + LexiconProWords.MATCH + LexiconProWords.ENTRY + " {群标签} {触发词} {r:回复}")
-    @Permission("lexicons.group.{args.群标签}.add")
+    @Required("lexicons.group.{args.群标签}.add")
     public void onAddGroupContainMatchEntry(XiaomingUser user, @FilterParameter("触发词") String key, @FilterParameter("群标签") String groupTag, @FilterParameter("回复") String reply) {
         if (!MiraiCodeUtil.getImages(key).isEmpty()) {
             user.sendError("有关正则表达式的匹配规则中不能包含图片");
@@ -964,7 +965,7 @@ public class LexiconsProInteractors extends SimpleInteractors<LexiconsProPlugin>
 
     @NonNext
     @Filter(LexiconProWords.GROUP + LexiconProWords.ENTRY + " {群标签} {群词条}")
-    @Permission("lexicons.group.{args.群标签}.look")
+    @Required("lexicons.group.{args.群标签}.look")
     public void onLookGroupEntry(XiaomingUser user, @FilterParameter("群标签") String groupTag, @FilterParameter("群词条") LexiconEntry entry) {
         user.sendMessage("【群聊词条详情】：\n" + entry);
     }
@@ -972,10 +973,10 @@ public class LexiconsProInteractors extends SimpleInteractors<LexiconsProPlugin>
     @NonNext
     @Filter(LexiconProWords.GROUP + LexiconProWords.ENTRY + " {群标签}")
     @Filter(LexiconProWords.GROUP + LexiconProWords.LEXICON + " {群标签}")
-    @Permission("lexicons.group.{args.群标签}.list")
+    @Required("lexicons.group.{args.群标签}.list")
     public void onListGroupEntry(XiaomingUser user, @FilterParameter("群标签") String groupTag) {
-        final Optional<Set<LexiconEntry>> optionalGroupEntries = manager.forGroupEntries(groupTag);
-        if (optionalGroupEntries.isEmpty()) {
+        final Optional<Set<LexiconEntry>> optionalGroupEntries = lexiconManager.forGroupEntries(groupTag);
+        if (!optionalGroupEntries.isPresent()) {
             user.sendWarning("没有任何群聊词条");
         } else {
             final Set<LexiconEntry> groupEntries = optionalGroupEntries.get();
@@ -986,7 +987,7 @@ public class LexiconsProInteractors extends SimpleInteractors<LexiconsProPlugin>
 
     @NonNext
     @Filter(LexiconProWords.REMOVE + LexiconProWords.GROUP + LexiconProWords.ENTRY + " {群标签} {群词条}")
-    @Permission("lexicons.group.{args.群标签}.remove")
+    @Required("lexicons.group.{args.群标签}.remove")
     public void onRemoveGroupEntry(XiaomingUser user,
                                    @FilterParameter("群标签") String groupTag,
                                    @FilterParameter("群词条") LexiconEntry entry,
@@ -996,21 +997,21 @@ public class LexiconsProInteractors extends SimpleInteractors<LexiconsProPlugin>
 
     @NonNext
     @Filter(LexiconProWords.REMOVE + LexiconProWords.GROUP + LexiconProWords.ENTRY + LexiconProWords.RULE + " {群标签} {群词条}")
-    @Permission("lexicons.group.{args.群标签}.remove")
+    @Required("lexicons.group.{args.群标签}.remove")
     public void onRemoveGroupEntryRule(XiaomingUser user, @FilterParameter("群标签") String groupTag, @FilterParameter("群词条") LexiconEntry entry) {
         removeGroupEntryRule(user, groupTag, entry);
     }
 
     @NonNext
     @Filter(LexiconProWords.REMOVE + LexiconProWords.GROUP + LexiconProWords.ENTRY + LexiconProWords.REPLY + " {群标签} {群词条} {r:回复}")
-    @Permission("lexicons.group.{args.群标签}.remove")
+    @Required("lexicons.group.{args.群标签}.remove")
     public void onRemoveGroupEntryReply(XiaomingUser user, @FilterParameter("群词条") LexiconEntry entry, @FilterParameter("群词条") String key, @FilterParameter("群标签") String groupTag, @FilterParameter("回复") String reply) {
         removeGroupEntryReply(user, groupTag, entry, key, reply);
     }
 
     @NonNext
     @Filter(LexiconProWords.REMOVE + LexiconProWords.GROUP + LexiconProWords.ENTRY + LexiconProWords.REPLY + " {群标签} {群词条}")
-    @Permission("lexicons.group.{args.群标签}.remove")
+    @Required("lexicons.group.{args.群标签}.remove")
     public void onRemoveGroupEntryReplyIndex(XiaomingUser user, @FilterParameter("群词条") LexiconEntry entry, @FilterParameter("群标签") String groupTag, @FilterParameter("群词条") String key) {
         removeGroupEntryReplyIndex(user, groupTag, entry, key);
     }
@@ -1018,7 +1019,7 @@ public class LexiconsProInteractors extends SimpleInteractors<LexiconsProPlugin>
     @NonNext
     @Filter(LexiconProWords.ADD + LexiconProWords.GROUP + LexiconProWords.ENTRY + LexiconProWords.REPLY + " {群标签} {触发词} {r:回复}")
     @Filter(LexiconProWords.NEW + LexiconProWords.GROUP + LexiconProWords.ENTRY + LexiconProWords.REPLY + " {群标签} {触发词} {r:回复}")
-    @Permission("lexicons.group.{args.群标签}.add")
+    @Required("lexicons.group.{args.群标签}.add")
     public void onAddGroupEntryReply(XiaomingUser user, @FilterParameter("触发词") String key, @FilterParameter("群标签") String groupTag, @FilterParameter("回复") String reply) {
         addGroupEntryReply(user, groupTag, key, reply);
     }
@@ -1026,7 +1027,7 @@ public class LexiconsProInteractors extends SimpleInteractors<LexiconsProPlugin>
     @NonNext
     @Filter(LexiconProWords.BATCH + LexiconProWords.ADD + LexiconProWords.GROUP + LexiconProWords.ENTRY + LexiconProWords.REPLY + " {群标签} {触发词}")
     @Filter(LexiconProWords.BATCH + LexiconProWords.NEW + LexiconProWords.GROUP + LexiconProWords.ENTRY + LexiconProWords.REPLY + " {群标签} {触发词}")
-    @Permission("lexicons.group.{args.群标签}.add")
+    @Required("lexicons.group.{args.群标签}.add")
     public void onAddGroupEntryReply(XiaomingUser user, @FilterParameter("触发词") String key, @FilterParameter("群标签") String groupTag) {
         addGroupEntryReplyOneByOne(user, groupTag, key);
     }
@@ -1034,7 +1035,7 @@ public class LexiconsProInteractors extends SimpleInteractors<LexiconsProPlugin>
     @NonNext
     @Filter(LexiconProWords.ADD + LexiconProWords.THIS + LexiconProWords.GROUP + LexiconProWords.ENTRY + LexiconProWords.IMAGE + LexiconProWords.REPLY + " {群词条} {r:回复}")
     @Filter(LexiconProWords.NEW + LexiconProWords.THIS + LexiconProWords.GROUP + LexiconProWords.ENTRY + LexiconProWords.IMAGE + LexiconProWords.REPLY + " {群词条} {r:回复}")
-    @Permission("lexicons.group.{user.groupCode}.add")
+    @Required("lexicons.group.{user.groupCode}.add")
     public void onAddGroupEntryImageReply(GroupXiaomingUser user,
                                           @FilterParameter("群词条") String key,
                                           @FilterParameter("群词条") LexiconEntry entry,
@@ -1047,7 +1048,7 @@ public class LexiconsProInteractors extends SimpleInteractors<LexiconsProPlugin>
     @Filter(LexiconProWords.NEW + LexiconProWords.THIS + LexiconProWords.GROUP + LexiconProWords.ENTRY + " {触发词} {r:回复}")
     @Filter(LexiconProWords.ADD + LexiconProWords.THIS + LexiconProWords.GROUP + LexiconProWords.EQUAL + LexiconProWords.ENTRY + " {触发词} {r:回复}")
     @Filter(LexiconProWords.NEW + LexiconProWords.THIS + LexiconProWords.GROUP + LexiconProWords.EQUAL + LexiconProWords.ENTRY + " {触发词} {r:回复}")
-    @Permission("lexicons.group.{user.groupCode}.add")
+    @Required("lexicons.group.{user.groupCode}.add")
     public void onAddThisGroupEqualEntry(GroupXiaomingUser user, @FilterParameter("触发词") String key, @FilterParameter("回复") String reply) {
         addGroupEntry(user, user.getGroupCodeString(), LexiconMatchType.EQUAL, key, reply);
     }
@@ -1055,7 +1056,7 @@ public class LexiconsProInteractors extends SimpleInteractors<LexiconsProPlugin>
     @NonNext
     @Filter(LexiconProWords.ADD + LexiconProWords.THIS + LexiconProWords.GROUP + LexiconProWords.IGNORE_CASE + LexiconProWords.ENTRY + " {触发词} {r:回复}")
     @Filter(LexiconProWords.NEW + LexiconProWords.THIS + LexiconProWords.GROUP + LexiconProWords.IGNORE_CASE + LexiconProWords.ENTRY + " {触发词} {r:回复}")
-    @Permission("lexicons.group.{user.groupCode}.add")
+    @Required("lexicons.group.{user.groupCode}.add")
     public void onAddThisGroupEqualIgnoreCaseEntry(GroupXiaomingUser user, @FilterParameter("触发词") String key, @FilterParameter("回复") String reply) {
         addGroupEntry(user, user.getGroupCodeString(), LexiconMatchType.EQUAL_IGNORE_CASE, key, reply);
     }
@@ -1063,7 +1064,7 @@ public class LexiconsProInteractors extends SimpleInteractors<LexiconsProPlugin>
     @NonNext
     @Filter(LexiconProWords.ADD + LexiconProWords.THIS + LexiconProWords.GROUP + LexiconProWords.START + LexiconProWords.EQUAL + LexiconProWords.ENTRY + " {触发词} {r:回复}")
     @Filter(LexiconProWords.NEW + LexiconProWords.THIS + LexiconProWords.GROUP + LexiconProWords.START + LexiconProWords.EQUAL + LexiconProWords.ENTRY + " {触发词} {r:回复}")
-    @Permission("lexicons.group.{user.groupCode}.add")
+    @Required("lexicons.group.{user.groupCode}.add")
     public void onAddThisGroupStartEqualEntry(GroupXiaomingUser user, @FilterParameter("触发词") String key, @FilterParameter("回复") String reply) {
         addGroupEntry(user, user.getGroupCodeString(), LexiconMatchType.START_EQUAL, key, reply);
     }
@@ -1071,7 +1072,7 @@ public class LexiconsProInteractors extends SimpleInteractors<LexiconsProPlugin>
     @NonNext
     @Filter(LexiconProWords.ADD + LexiconProWords.THIS + LexiconProWords.GROUP + LexiconProWords.END + LexiconProWords.EQUAL + LexiconProWords.ENTRY + " {触发词} {r:回复}")
     @Filter(LexiconProWords.NEW + LexiconProWords.THIS + LexiconProWords.GROUP + LexiconProWords.END + LexiconProWords.EQUAL + LexiconProWords.ENTRY + " {触发词} {r:回复}")
-    @Permission("lexicons.group.{user.groupCode}.add")
+    @Required("lexicons.group.{user.groupCode}.add")
     public void onAddThisGroupEndEqualEntry(GroupXiaomingUser user, @FilterParameter("触发词") String key, @FilterParameter("回复") String reply) {
         addGroupEntry(user, user.getGroupCodeString(), LexiconMatchType.END_EQUAL, key, reply);
     }
@@ -1079,7 +1080,7 @@ public class LexiconsProInteractors extends SimpleInteractors<LexiconsProPlugin>
     @NonNext
     @Filter(LexiconProWords.ADD + LexiconProWords.THIS + LexiconProWords.GROUP + LexiconProWords.MATCH + LexiconProWords.ENTRY + " {触发词} {r:回复}")
     @Filter(LexiconProWords.NEW + LexiconProWords.THIS + LexiconProWords.GROUP + LexiconProWords.MATCH + LexiconProWords.ENTRY + " {触发词} {r:回复}")
-    @Permission("lexicons.group.{user.groupCode}.add")
+    @Required("lexicons.group.{user.groupCode}.add")
     public void onAddThisGroupMatchEntry(GroupXiaomingUser user, @FilterParameter("触发词") String key, @FilterParameter("回复") String reply) {
         if (!MiraiCodeUtil.getImages(key).isEmpty()) {
             user.sendError("有关正则表达式的匹配规则中不能包含图片");
@@ -1095,7 +1096,7 @@ public class LexiconsProInteractors extends SimpleInteractors<LexiconsProPlugin>
     @NonNext
     @Filter(LexiconProWords.ADD + LexiconProWords.THIS + LexiconProWords.GROUP + LexiconProWords.START + LexiconProWords.MATCH + LexiconProWords.ENTRY + " {触发词} {r:回复}")
     @Filter(LexiconProWords.NEW + LexiconProWords.THIS + LexiconProWords.GROUP + LexiconProWords.START + LexiconProWords.MATCH + LexiconProWords.ENTRY + " {触发词} {r:回复}")
-    @Permission("lexicons.group.{user.groupCode}.add")
+    @Required("lexicons.group.{user.groupCode}.add")
     public void onAddThisGroupStartMatchEntry(GroupXiaomingUser user, @FilterParameter("触发词") String key, @FilterParameter("回复") String reply) {
         if (!MiraiCodeUtil.getImages(key).isEmpty()) {
             user.sendError("有关正则表达式的匹配规则中不能包含图片");
@@ -1111,7 +1112,7 @@ public class LexiconsProInteractors extends SimpleInteractors<LexiconsProPlugin>
     @NonNext
     @Filter(LexiconProWords.ADD + LexiconProWords.THIS + LexiconProWords.GROUP + LexiconProWords.END + LexiconProWords.MATCH + LexiconProWords.ENTRY + " {触发词} {r:回复}")
     @Filter(LexiconProWords.NEW + LexiconProWords.THIS + LexiconProWords.GROUP + LexiconProWords.END + LexiconProWords.MATCH + LexiconProWords.ENTRY + " {触发词} {r:回复}")
-    @Permission("lexicons.group.{user.groupCode}.add")
+    @Required("lexicons.group.{user.groupCode}.add")
     public void onAddThisGroupEndMatchEntry(GroupXiaomingUser user, @FilterParameter("触发词") String key, @FilterParameter("回复") String reply) {
         if (!MiraiCodeUtil.getImages(key).isEmpty()) {
             user.sendError("有关正则表达式的匹配规则中不能包含图片");
@@ -1127,7 +1128,7 @@ public class LexiconsProInteractors extends SimpleInteractors<LexiconsProPlugin>
     @NonNext
     @Filter(LexiconProWords.ADD + LexiconProWords.THIS + LexiconProWords.GROUP + LexiconProWords.PARAMETER + LexiconProWords.ENTRY + " {触发词} {r:回复}")
     @Filter(LexiconProWords.NEW + LexiconProWords.THIS + LexiconProWords.GROUP + LexiconProWords.PARAMETER + LexiconProWords.ENTRY + " {触发词} {r:回复}")
-    @Permission("lexicons.group.{user.groupCode}.add")
+    @Required("lexicons.group.{user.groupCode}.add")
     public void onAddThisGroupParameterEntry(GroupXiaomingUser user, @FilterParameter("触发词") String key, @FilterParameter("回复") String reply) {
         if (!MiraiCodeUtil.getImages(key).isEmpty()) {
             user.sendError("有关参数的匹配规则中不能包含图片");
@@ -1145,7 +1146,7 @@ public class LexiconsProInteractors extends SimpleInteractors<LexiconsProPlugin>
     @Filter(LexiconProWords.NEW + LexiconProWords.THIS + LexiconProWords.GROUP + LexiconProWords.CONTAIN + LexiconProWords.ENTRY + " {触发词} {r:回复}")
     @Filter(LexiconProWords.ADD + LexiconProWords.THIS + LexiconProWords.GROUP + LexiconProWords.CONTAIN + LexiconProWords.EQUAL + LexiconProWords.ENTRY + " {触发词} {r:回复}")
     @Filter(LexiconProWords.NEW + LexiconProWords.THIS + LexiconProWords.GROUP + LexiconProWords.CONTAIN + LexiconProWords.EQUAL + LexiconProWords.ENTRY + " {触发词} {r:回复}")
-    @Permission("lexicons.group.{user.groupCode}.add")
+    @Required("lexicons.group.{user.groupCode}.add")
     public void onAddThisGroupContainEqualEntry(GroupXiaomingUser user, @FilterParameter("触发词") String key, @FilterParameter("回复") String reply) {
         addGroupEntry(user, user.getGroupCodeString(), LexiconMatchType.CONTAIN_EQUAL, key, reply);
     }
@@ -1153,7 +1154,7 @@ public class LexiconsProInteractors extends SimpleInteractors<LexiconsProPlugin>
     @NonNext
     @Filter(LexiconProWords.ADD + LexiconProWords.THIS + LexiconProWords.GROUP + LexiconProWords.CONTAIN + LexiconProWords.MATCH + LexiconProWords.ENTRY + " {触发词} {r:回复}")
     @Filter(LexiconProWords.NEW + LexiconProWords.THIS + LexiconProWords.GROUP + LexiconProWords.CONTAIN + LexiconProWords.MATCH + LexiconProWords.ENTRY + " {触发词} {r:回复}")
-    @Permission("lexicons.group.{user.groupCode}.add")
+    @Required("lexicons.group.{user.groupCode}.add")
     public void onAddThisGroupContainMatchEntry(GroupXiaomingUser user, @FilterParameter("触发词") String key, @FilterParameter("回复") String reply) {
         if (!MiraiCodeUtil.getImages(key).isEmpty()) {
             user.sendError("有关正则表达式的匹配规则中不能包含图片");
@@ -1168,7 +1169,7 @@ public class LexiconsProInteractors extends SimpleInteractors<LexiconsProPlugin>
 
     @NonNext
     @Filter(LexiconProWords.THIS + LexiconProWords.GROUP + LexiconProWords.ENTRY + " {群词条}")
-    @Permission("lexicons.group.{user.groupCode}.look")
+    @Required("lexicons.group.{user.groupCode}.look")
     public void onLookThisGroupEntry(GroupXiaomingUser user, @FilterParameter("群词条") LexiconEntry entry) {
         user.sendMessage("【群聊词条详情】：\n" + entry);
     }
@@ -1176,15 +1177,15 @@ public class LexiconsProInteractors extends SimpleInteractors<LexiconsProPlugin>
     @NonNext
     @Filter(LexiconProWords.THIS + LexiconProWords.GROUP + LexiconProWords.ENTRY)
     @Filter(LexiconProWords.THIS + LexiconProWords.GROUP + LexiconProWords.LEXICON)
-    @Permission("lexicons.group.{user.groupCode}.list")
+    @Required("lexicons.group.{user.groupCode}.list")
     public void onListThisGroupEntry(GroupXiaomingUser user) {
         final Set<LexiconEntry> groupEntries = new HashSet<>();
-        user.getContact().getTags().forEach(tag -> manager.forGroupEntries(user.getGroupCodeString()).ifPresent(groupEntries::addAll));
+        user.getContact().getTags().forEach(tag -> lexiconManager.forGroupEntries(user.getGroupCodeString()).ifPresent(groupEntries::addAll));
 
         if (CollectionUtil.isEmpty(groupEntries)) {
             user.sendWarning("本群没有任何词条");
         } else {
-            final Set<LexiconEntry> entries = CollectionUtil.copyValueOf(groupEntries);
+            final Set<LexiconEntry> entries = CollectionUtil.copyOf(groupEntries);
 
             user.sendMessage("本群共有 " + groupEntries.size() + " 个词条：\n" +
                     CollectionUtil.toIndexString(groupEntries, lexiconEntry -> CollectionUtil.toString(lexiconEntry.getMatchers(), "、")));
@@ -1193,28 +1194,28 @@ public class LexiconsProInteractors extends SimpleInteractors<LexiconsProPlugin>
 
     @NonNext
     @Filter(LexiconProWords.REMOVE + LexiconProWords.THIS + LexiconProWords.GROUP + LexiconProWords.ENTRY + " {群词条}")
-    @Permission("lexicons.group.{user.groupCode}.remove")
+    @Required("lexicons.group.{user.groupCode}.remove")
     public void onRemoveThisGroupEntry(GroupXiaomingUser user, @FilterParameter("群词条") LexiconEntry entry, @FilterParameter("群词条") String key) {
         removeGroupEntry(user, user.getGroupCodeString(), entry, key);
     }
 
     @NonNext
     @Filter(LexiconProWords.REMOVE + LexiconProWords.THIS + LexiconProWords.GROUP + LexiconProWords.ENTRY + LexiconProWords.RULE + " {群词条}")
-    @Permission("lexicons.group.{user.groupCode}.remove")
+    @Required("lexicons.group.{user.groupCode}.remove")
     public void onRemoveThisGroupEntryRule(GroupXiaomingUser user, @FilterParameter("群词条") LexiconEntry entry) {
         removeGroupEntryRule(user, user.getGroupCodeString(), entry);
     }
 
     @NonNext
     @Filter(LexiconProWords.REMOVE + LexiconProWords.THIS + LexiconProWords.GROUP + LexiconProWords.ENTRY + LexiconProWords.REPLY + " {群词条} {r:回复}")
-    @Permission("lexicons.group.{user.groupCode}.remove")
+    @Required("lexicons.group.{user.groupCode}.remove")
     public void onRemoveThisGroupEntryReply(GroupXiaomingUser user, @FilterParameter("群词条") LexiconEntry entry, @FilterParameter("群词条") String key, @FilterParameter("回复") String reply) {
         removeGroupEntryReply(user, user.getGroupCodeString(), entry, key, reply);
     }
 
     @NonNext
     @Filter(LexiconProWords.REMOVE + LexiconProWords.THIS + LexiconProWords.GROUP + LexiconProWords.ENTRY + LexiconProWords.REPLY + " {群词条}")
-    @Permission("lexicons.group.{user.groupCode}.remove")
+    @Required("lexicons.group.{user.groupCode}.remove")
     public void onRemoveThisGroupEntryReplyIndex(GroupXiaomingUser user, @FilterParameter("群词条") LexiconEntry entry, @FilterParameter("群词条") String key) {
         removeGroupEntryReplyIndex(user, user.getGroupCodeString(), entry, key);
     }
@@ -1222,15 +1223,15 @@ public class LexiconsProInteractors extends SimpleInteractors<LexiconsProPlugin>
     @NonNext
     @Filter(LexiconProWords.ALL + LexiconProWords.GROUP + LexiconProWords.ENTRY)
     @Filter(LexiconProWords.ALL + LexiconProWords.GROUP + LexiconProWords.LEXICON)
-    @Permission("lexicons.group")
+    @Required("lexicons.group")
     public void onListAllGroupEntry(XiaomingUser user) {
-        final Map<String, Set<LexiconEntry>> groupEntries = manager.getGroupEntries();
+        final Map<String, Set<LexiconEntry>> groupEntries = lexiconManager.getGroupEntries();
         if (groupEntries.isEmpty()) {
             user.sendError("没有任何群具有群词条");
         } else {
             user.sendMessage("所有的群词条：\n" +
                     CollectionUtil.toIndexString(groupEntries.entrySet(), entry -> {
-                        return entry.getKey() + "（" + getXiaomingBot().getGroupRecordManager().forTag(entry.getKey()).size() + " 个群）\n" +
+                        return entry.getKey() + "（" + getXiaomingBot().getGroupInformationManager().searchGroupsByTag(entry.getKey()).size() + " 个群）\n" +
                                 CollectionUtil.toIndexString(entry.getValue(), (integer, element) -> ("(" + (integer + 1) + ") "),
                                         e -> CollectionUtil.toString(e.getMatchers(), "\n"), "\n");
                     }));
@@ -1240,7 +1241,7 @@ public class LexiconsProInteractors extends SimpleInteractors<LexiconsProPlugin>
     @NonNext
     @Filter(LexiconProWords.ADD + LexiconProWords.THIS + LexiconProWords.GROUP + LexiconProWords.ENTRY + LexiconProWords.REPLY + " {触发词} {r:回复}")
     @Filter(LexiconProWords.NEW + LexiconProWords.THIS + LexiconProWords.GROUP + LexiconProWords.ENTRY + LexiconProWords.REPLY + " {触发词} {r:回复}")
-    @Permission("lexicons.group.{user.groupCode}.add")
+    @Required("lexicons.group.{user.groupCode}.add")
     public void onAddThisGroupEntryReply(GroupXiaomingUser user, @FilterParameter("触发词") String key, @FilterParameter("回复") String reply) {
         addGroupEntryReply(user, user.getGroupCodeString(), key, reply);
     }
@@ -1248,7 +1249,7 @@ public class LexiconsProInteractors extends SimpleInteractors<LexiconsProPlugin>
     @NonNext
     @Filter(LexiconProWords.BATCH + LexiconProWords.ADD + LexiconProWords.THIS + LexiconProWords.GROUP + LexiconProWords.ENTRY + LexiconProWords.REPLY + " {触发词}")
     @Filter(LexiconProWords.BATCH + LexiconProWords.NEW + LexiconProWords.THIS + LexiconProWords.GROUP + LexiconProWords.ENTRY + LexiconProWords.REPLY + " {触发词}")
-    @Permission("lexicons.group.{user.groupCode}.add")
+    @Required("lexicons.group.{user.groupCode}.add")
     public void onAddThisGroupEntryReplyOneByOne(GroupXiaomingUser user, @FilterParameter("触发词") String key) {
         addGroupEntryReplyOneByOne(user, user.getGroupCodeString(), key);
     }

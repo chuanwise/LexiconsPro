@@ -5,12 +5,12 @@
     <modelVersion>4.0.0</modelVersion>
 
     <groupId>cn.chuanwise</groupId>
-    <artifactId>lexicons-pro</artifactId>
-    <version>1.5-exp</version>
+    <artifactId>LexiconsPro</artifactId>
+    <version>1.15</version>
 
     <repositories>
         <repository>
-            <id>xiaoming-core</id>
+            <id>XiaoMingCore</id>
             <url>https://www.github.com/Chuanwise/xiaoming-bot</url>
         </repository>
     </repositories>
@@ -18,8 +18,8 @@
     <dependencies>
         <dependency>
             <groupId>cn.chuanwise</groupId>
-            <artifactId>xiaoming-core</artifactId>
-            <version>3.7.2-exp</version>
+            <artifactId>XiaoMingCore</artifactId>
+            <version>4.3.5</version>
             <scope>provided</scope>
         </dependency>
     </dependencies>
